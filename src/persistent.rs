@@ -4,14 +4,11 @@ use chrono::{DateTime, Utc};
 use heed::types::*;
 use heed::{Database, Env, EnvOpenOptions};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use tracing::info;
 
-use crate::{
-    cosine_similarity, Document, EmbeddingModel, EnhancedRAGArticleGenerator, OllamaEmbeddings,
-    SourceMetadata,
-};
+use crate::{Document, EnhancedRAGArticleGenerator, SourceMetadata, cosine_similarity, EmbeddingModel, OllamaEmbeddings};
 
 /// Extended source metadata with analytics
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -47,11 +44,11 @@ pub enum SourceType {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, PartialOrd)]
 pub enum ReliabilityRating {
-    VeryHigh, // 0.9+: arXiv, official documentation
-    High,     // 0.7-0.9: verified blogs, GitHub
-    Medium,   // 0.5-0.7: regular websites
-    Low,      // 0.3-0.5: questionable sources
-    VeryLow,  // 0.0-0.3: spam, misinformation
+    VeryHigh,    // 0.9+: arXiv, official documentation
+    High,        // 0.7-0.9: verified blogs, GitHub
+    Medium,      // 0.5-0.7: regular websites
+    Low,         // 0.3-0.5: questionable sources
+    VeryLow,     // 0.0-0.3: spam, misinformation
 }
 
 /// Cached document structure with vector data
@@ -71,7 +68,7 @@ pub struct CachedDocument {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocumentQualityMetrics {
     pub content_length: usize,
-    pub structure_score: f32,   // Presence of headers, lists
+    pub structure_score: f32,  // Presence of headers, lists
     pub readability_score: f32, // Text complexity
     pub technical_depth: f32,   // Depth of technical content
 }
@@ -136,30 +133,17 @@ impl CachedDocument {
         let header_count = content.matches('#').count() as f32;
         let list_count = content.matches("- ").count() as f32;
         let code_count = content.matches("```").count() as f32;
-        let structure_score = (header_count + list_count + code_count * 2.0)
-            / (content_length as f32 / 1000.0).max(1.0);
+        let structure_score = (header_count + list_count + code_count * 2.0) / (content_length as f32 / 1000.0).max(1.0);
 
         // Readability score (simple metric)
         let sentences = content.split('.').count() as f32;
         let words = content.split_whitespace().count() as f32;
-        let avg_sentence_length = if sentences > 0.0 {
-            words / sentences
-        } else {
-            0.0
-        };
+        let avg_sentence_length = if sentences > 0.0 { words / sentences } else { 0.0 };
         let readability_score = (20.0 - avg_sentence_length.min(20.0)) / 20.0;
 
         // Technical depth (keywords, code examples)
-        let technical_keywords = [
-            "function",
-            "class",
-            "implementation",
-            "algorithm",
-            "performance",
-            "optimization",
-        ];
-        let tech_count = technical_keywords
-            .iter()
+        let technical_keywords = ["function", "class", "implementation", "algorithm", "performance", "optimization"];
+        let tech_count = technical_keywords.iter()
             .map(|&word| content.to_lowercase().matches(word).count())
             .sum::<usize>() as f32;
         let technical_depth = (tech_count / (content_length as f32 / 1000.0).max(1.0)).min(1.0);
@@ -174,10 +158,7 @@ impl CachedDocument {
 
     /// Detects content language (simplified version)
     pub fn detect_language(content: &str) -> String {
-        let russian_chars = content
-            .chars()
-            .filter(|c| "абвгдеёжзийклмнопрстуфхцчшщъыьэюя".contains(*c))
-            .count();
+        let russian_chars = content.chars().filter(|c| "абвгдеёжзийклмнопрстуфхцчшщъыьэюя".contains(*c)).count();
         let total_chars = content.chars().filter(|c| c.is_alphabetic()).count();
 
         if total_chars > 0 && (russian_chars as f32 / total_chars as f32) > 0.1 {
@@ -238,14 +219,8 @@ impl EnhancedSourceMetadata {
 
         // Bonus for authoritative domains
         let trusted_domains = [
-            "arxiv.org",
-            "github.com",
-            "stackoverflow.com",
-            "docs.rs",
-            "rust-lang.org",
-            "mozilla.org",
-            "wikipedia.org",
-            "medium.com",
+            "arxiv.org", "github.com", "stackoverflow.com", "docs.rs",
+            "rust-lang.org", "mozilla.org", "wikipedia.org", "medium.com"
         ];
 
         if trusted_domains.iter().any(|&d| domain.contains(d)) {
@@ -326,17 +301,11 @@ impl CachedQuery {
 
         if query_lower.contains("tutorial") || query_lower.contains("how to") {
             QueryType::Tutorial
-        } else if query_lower.contains("vs")
-            || query_lower.contains("compare")
-            || query_lower.contains("difference")
-        {
+        } else if query_lower.contains("vs") || query_lower.contains("compare") || query_lower.contains("difference") {
             QueryType::Comparison
         } else if query_lower.contains("reference") || query_lower.contains("documentation") {
             QueryType::Reference
-        } else if query_lower.contains("error")
-            || query_lower.contains("fix")
-            || query_lower.contains("troubleshoot")
-        {
+        } else if query_lower.contains("error") || query_lower.contains("fix") || query_lower.contains("troubleshoot") {
             QueryType::Troubleshooting
         } else if query_lower.contains("best practices") || query_lower.contains("guidelines") {
             QueryType::BestPractices
@@ -354,18 +323,8 @@ impl CachedQuery {
 
         // Simple extraction of key technical terms
         let tech_terms = [
-            "rust",
-            "python",
-            "javascript",
-            "async",
-            "web",
-            "framework",
-            "database",
-            "api",
-            "performance",
-            "security",
-            "testing",
-            "deployment",
+            "rust", "python", "javascript", "async", "web", "framework",
+            "database", "api", "performance", "security", "testing", "deployment"
         ];
 
         for word in words {
@@ -382,21 +341,20 @@ impl CachedQuery {
     /// Calculates semantic similarity with another query
     pub fn semantic_similarity(&self, other: &CachedQuery) -> f32 {
         if let (Some(ref embedding1), Some(ref embedding2)) = (&self.embedding, &other.embedding) {
-            cosine_similarity(embedding1, embedding2)
-        } else {
-            // Fallback to text similarity
-            let topics1: std::collections::HashSet<_> = self.semantic_topics.iter().collect();
-            let topics2: std::collections::HashSet<_> = other.semantic_topics.iter().collect();
-
-            let intersection = topics1.intersection(&topics2).count() as f32;
-            let union = topics1.union(&topics2).count() as f32;
-
-            if union > 0.0 {
-                intersection / union
-            } else {
-                0.0
+            // Guard against mismatched embedding lengths
+            if embedding1.len() == embedding2.len() {
+                return cosine_similarity(embedding1, embedding2);
             }
         }
+
+        // Fallback to text similarity if embeddings missing or mismatched
+        let topics1: HashSet<_> = self.semantic_topics.iter().collect();
+        let topics2: HashSet<_> = other.semantic_topics.iter().collect();
+
+        let intersection = topics1.intersection(&topics2).count() as f32;
+        let union = topics1.union(&topics2).count() as f32;
+
+        if union > 0.0 { intersection / union } else { 0.0 }
     }
 }
 
@@ -440,8 +398,7 @@ pub struct PersistentEnhancedRAG {
     env: Option<Env>,
     document_cache: Option<Database<Str, SerdeBincode<CachedDocument>>>,
     query_cache: Option<Database<Str, SerdeBincode<CachedQuery>>>,
-    metadata_cache:
-        Option<Database<U32<byteorder::NativeEndian>, SerdeBincode<EnhancedSourceMetadata>>>,
+    metadata_cache: Option<Database<U32<byteorder::NativeEndian>, SerdeBincode<EnhancedSourceMetadata>>>,
 
     /// Vector database (arroy) for semantic search
     /// Used for storing and searching document vector representations
@@ -464,12 +421,12 @@ impl PersistentEnhancedRAG {
         let inner = EnhancedRAGArticleGenerator::new(
             searx_host,
             model_name,
-            embedding_model_name,
+            embedding_model_name.clone(),
             ollama_host.clone(),
         );
 
         let embedding_model = Some(Box::new(OllamaEmbeddings::new(
-            "nomic-embed-text:latest".to_string(),
+            embedding_model_name,
             ollama_host,
         )) as Box<dyn EmbeddingModel + Send + Sync>);
 
@@ -495,10 +452,7 @@ impl PersistentEnhancedRAG {
         ollama_host: Option<String>,
         cache_settings: Option<CacheSettings>,
     ) -> Result<Self> {
-        info!(
-            "Initializing extended persistent storage: {:?}",
-            db_path.as_ref()
-        );
+        info!("Initializing extended persistent storage: {:?}", db_path.as_ref());
 
         let env = unsafe {
             EnvOpenOptions::new()
@@ -519,12 +473,12 @@ impl PersistentEnhancedRAG {
         let inner = EnhancedRAGArticleGenerator::new(
             searx_host,
             model_name,
-            embedding_model_name,
+            embedding_model_name.clone(),
             ollama_host.clone(),
         );
 
         let embedding_model = Some(Box::new(OllamaEmbeddings::new(
-            "nomic-embed-text:latest".to_string(),
+            embedding_model_name,
             ollama_host,
         )) as Box<dyn EmbeddingModel + Send + Sync>);
 
@@ -566,14 +520,15 @@ impl PersistentEnhancedRAG {
         // 2. Extract quality documents
         let mut cached_docs = Vec::new();
         let mut fresh_urls = Vec::new();
+        let mut all_urls = HashSet::new();
 
         for cached_query in similar_queries {
             for url in cached_query.related_urls {
                 if let Some(doc) = self.get_cached_document(&url).await? {
-                    if doc.is_fresh(self.cache_settings.max_document_age_days)
-                        && self.meets_quality_threshold(&doc)
-                    {
+                    if doc.is_fresh(self.cache_settings.max_document_age_days) &&
+                       self.meets_quality_threshold(&doc) {
                         cached_docs.push(self.cached_to_document(&doc));
+                        all_urls.insert(url);
                     } else {
                         fresh_urls.push(url);
                     }
@@ -584,10 +539,7 @@ impl PersistentEnhancedRAG {
         // 3. Intelligent loading of new documents
         if cached_docs.len() < max_retrieved_docs {
             let needed_docs = max_retrieved_docs - cached_docs.len();
-            let new_urls = self
-                .inner
-                .search_and_collect_urls(query, needed_docs as u32)
-                .await?;
+            let new_urls = self.inner.search_and_collect_urls(query, needed_docs as u32).await?;
 
             // Filtering by quality sources
             let filtered_urls = self.filter_quality_urls(new_urls).await?;
@@ -597,41 +549,34 @@ impl PersistentEnhancedRAG {
         // 4. Loading and extended caching with parallel download
         if !fresh_urls.is_empty() {
             // USE PARALLEL DOWNLOAD
-            let new_docs = self
-                .inner
-                .load_documents_with_concurrency_limit(
-                    fresh_urls.clone(),
-                    self.cache_settings.max_concurrent_downloads,
-                )
-                .await?;
+            let new_docs = self.inner.load_documents_with_concurrency_limit(
+                fresh_urls.clone(),
+                self.cache_settings.max_concurrent_downloads
+            ).await?;
 
             for doc in &new_docs {
                 self.enhanced_cache_document(doc).await?;
+                if let Some(url) = doc.metadata.get("source_url") {
+                    all_urls.insert(url.clone());
+                }
             }
 
             cached_docs.extend(new_docs);
         }
 
         // 5. Caching query with semantic analysis
-        self.enhanced_cache_query(query, &fresh_urls, user_context)
-            .await?;
+        let combined_urls: Vec<String> = all_urls.into_iter().collect();
+        self.enhanced_cache_query(query, &combined_urls, user_context).await?;
 
         // 6. Intelligent ranking
-        let retrieved_docs = self
-            .intelligent_ranking(&cached_docs, query, max_retrieved_docs)
-            .await?;
+        let retrieved_docs = self.intelligent_ranking(&cached_docs, query, max_retrieved_docs).await?;
         let context = self.inner.prepare_context_with_sources(&retrieved_docs);
 
         // 7. Generation with extended prompt
-        let article_prompt = self
-            .build_ai_enhanced_prompt(query, &context, &cached_docs)
-            .await?;
+        let article_prompt = self.build_ai_enhanced_prompt(query, &context, &cached_docs).await?;
         let article_text = self.inner.language_model.generate(&article_prompt).await?;
 
-        info!(
-            "Article generated using {} documents (AI-enhanced)",
-            retrieved_docs.len()
-        );
+        info!("Article generated using {} documents (AI-enhanced)", retrieved_docs.len());
         Ok(self.inner.add_enhanced_sources_list(&article_text))
     }
 
@@ -689,9 +634,7 @@ impl PersistentEnhancedRAG {
                     semantic_topics: CachedQuery::extract_semantic_topics(query),
                     user_context: None,
                 });
-                sim_b
-                    .partial_cmp(&sim_a)
-                    .unwrap_or(std::cmp::Ordering::Equal)
+                sim_b.partial_cmp(&sim_a).unwrap_or(std::cmp::Ordering::Equal)
             });
 
             similar_queries.truncate(5);
@@ -704,8 +647,8 @@ impl PersistentEnhancedRAG {
 
     /// Checks if document meets quality threshold
     fn meets_quality_threshold(&self, doc: &CachedDocument) -> bool {
-        doc.quality_metrics.structure_score >= self.cache_settings.min_quality_score
-            || doc.quality_metrics.technical_depth >= self.cache_settings.min_quality_score
+        doc.quality_metrics.structure_score >= self.cache_settings.min_quality_score ||
+        doc.quality_metrics.technical_depth >= self.cache_settings.min_quality_score
     }
 
     /// Filters URLs by quality sources
@@ -769,13 +712,30 @@ impl PersistentEnhancedRAG {
         let mut wtxn = env.write_txn()?;
         document_cache.put(&mut wtxn, url, &cached_doc)?;
 
-        // Create and save extended source metadata
-        if let Some(source_metadata) = self.inner.sources_metadata().get(&(self.next_source_id)) {
-            let enhanced_metadata =
-                EnhancedSourceMetadata::from_basic(source_metadata, &doc.page_content);
-            let metadata_cache = self.metadata_cache.as_ref().unwrap();
-            metadata_cache.put(&mut wtxn, &self.next_source_id, &enhanced_metadata)?;
-            self.next_source_id += 1;
+        // Determine source ID: check doc metadata, existing metadata, or use new ID
+        let source_id = doc
+            .metadata
+            .get("source_number")
+            .and_then(|v| v.parse::<u32>().ok())
+            .or_else(|| {
+                self.inner
+                    .sources_metadata()
+                    .iter()
+                    .find(|(_, meta)| meta.url == *url)
+                    .map(|(id, _)| *id)
+            })
+            .or(Some(self.next_source_id));
+
+        if let Some(source_id) = source_id {
+            if let Some(source_metadata) = self.inner.sources_metadata().get(&source_id) {
+                let enhanced_metadata =
+                    EnhancedSourceMetadata::from_basic(source_metadata, &doc.page_content);
+                let metadata_cache = self.metadata_cache.as_ref().unwrap();
+                metadata_cache.put(&mut wtxn, &source_id, &enhanced_metadata)?;
+                if source_id == self.next_source_id {
+                    self.next_source_id += 1;
+                }
+            }
         }
 
         wtxn.commit()?;
@@ -787,7 +747,7 @@ impl PersistentEnhancedRAG {
         &self,
         query: &str,
         urls: &[String],
-        user_context: Option<UserContext>,
+        user_context: Option<UserContext>
     ) -> Result<()> {
         let env = match &self.env {
             Some(env) => env,
@@ -829,7 +789,7 @@ impl PersistentEnhancedRAG {
         &self,
         documents: &[Document],
         query: &str,
-        max_docs: usize,
+        max_docs: usize
     ) -> Result<Vec<Document>> {
         if documents.is_empty() {
             return Ok(Vec::new());
@@ -849,7 +809,7 @@ impl PersistentEnhancedRAG {
         &self,
         documents: &[Document],
         query: &str,
-        max_docs: usize,
+        max_docs: usize
     ) -> Result<Vec<Document>> {
         let embedding_model = self.embedding_model.as_ref().unwrap();
         let query_embedding = embedding_model.embed_query(query).await?;
@@ -857,14 +817,20 @@ impl PersistentEnhancedRAG {
         let mut scored_docs = Vec::new();
 
         for doc in documents {
-            // Get document embedding from cache or create new
-            let doc_embedding = if let Some(cached_doc) = self
-                .get_cached_document(doc.metadata.get("source_url").unwrap())
-                .await?
-            {
-                cached_doc
-                    .embedding
-                    .unwrap_or_else(|| vec![0.0; query_embedding.len()])
+            // Get document embedding from cache or create new, checking dimensionality
+            let doc_embedding = if let Some(cached_doc) = self.get_cached_document(
+                doc.metadata.get("source_url").unwrap()
+            ).await? {
+                if let Some(ref cached_emb) = cached_doc.embedding {
+                    if cached_emb.len() == query_embedding.len() {
+                        cached_emb.clone()
+                    } else {
+                         // Dimensions mismatch, recompute
+                         embedding_model.embed_query(&doc.page_content).await?
+                    }
+                } else {
+                    embedding_model.embed_query(&doc.page_content).await?
+                }
             } else {
                 embedding_model.embed_query(&doc.page_content).await?
             };
@@ -872,12 +838,11 @@ impl PersistentEnhancedRAG {
             let semantic_score = cosine_similarity(&query_embedding, &doc_embedding);
 
             // Combine semantic score with quality metrics
-            let quality_bonus = if let Some(cached_doc) = self
-                .get_cached_document(doc.metadata.get("source_url").unwrap())
-                .await?
-            {
-                cached_doc.quality_metrics.technical_depth * 0.2
-                    + cached_doc.quality_metrics.structure_score * 0.1
+            let quality_bonus = if let Some(cached_doc) = self.get_cached_document(
+                doc.metadata.get("source_url").unwrap()
+            ).await? {
+                cached_doc.quality_metrics.technical_depth * 0.2 +
+                cached_doc.quality_metrics.structure_score * 0.1
             } else {
                 0.0
             };
@@ -888,20 +853,11 @@ impl PersistentEnhancedRAG {
 
         // Sort and return top documents
         scored_docs.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        Ok(scored_docs
-            .into_iter()
-            .take(max_docs)
-            .map(|(doc, _)| doc)
-            .collect())
+        Ok(scored_docs.into_iter().take(max_docs).map(|(doc, _)| doc).collect())
     }
 
     /// Enhanced text ranking considering quality
-    fn enhanced_text_ranking(
-        &self,
-        documents: &[Document],
-        query: &str,
-        max_docs: usize,
-    ) -> Vec<Document> {
+    fn enhanced_text_ranking(&self, documents: &[Document], query: &str, max_docs: usize) -> Vec<Document> {
         let query_lower = query.to_lowercase();
         let query_words: Vec<&str> = query_lower.split_whitespace().collect();
 
@@ -909,9 +865,7 @@ impl PersistentEnhancedRAG {
             .iter()
             .map(|doc| {
                 let content_lower = doc.page_content.to_lowercase();
-                let title_lower = doc
-                    .metadata
-                    .get("source_title")
+                let title_lower = doc.metadata.get("source_title")
                     .unwrap_or(&String::new())
                     .to_lowercase();
 
@@ -931,18 +885,9 @@ impl PersistentEnhancedRAG {
 
                 // Bonus for document quality (if metrics available)
                 // In simple mode give small bonus for length and structure
-                let length_bonus = if doc.page_content.len() > 1000 {
-                    0.1
-                } else {
-                    0.0
-                };
-                let structure_bonus = if doc.page_content.contains("```")
-                    || doc.page_content.matches('#').count() > 2
-                {
-                    0.1
-                } else {
-                    0.0
-                };
+                let length_bonus = if doc.page_content.len() > 1000 { 0.1 } else { 0.0 };
+                let structure_bonus = if doc.page_content.contains("```") ||
+                                        doc.page_content.matches('#').count() > 2 { 0.1 } else { 0.0 };
 
                 score += length_bonus + structure_bonus;
 
@@ -951,11 +896,7 @@ impl PersistentEnhancedRAG {
             .collect();
 
         scored_docs.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        scored_docs
-            .into_iter()
-            .take(max_docs)
-            .map(|(doc, _)| doc)
-            .collect()
+        scored_docs.into_iter().take(max_docs).map(|(doc, _)| doc).collect()
     }
 
     /// Creates enhanced prompt considering AI analytics
@@ -963,7 +904,7 @@ impl PersistentEnhancedRAG {
         &self,
         query: &str,
         context: &str,
-        cached_docs: &[Document],
+        cached_docs: &[Document]
     ) -> Result<String> {
         let semantic_info = if self.cache_settings.enable_semantic_search {
             "\nNOTE: This response utilizes advanced semantic analysis and quality-filtered sources for enhanced accuracy and relevance.\n"
@@ -1023,10 +964,7 @@ impl PersistentEnhancedRAG {
     }
 
     /// Gets source metadata by URL
-    async fn get_source_metadata_by_url(
-        &self,
-        url: &str,
-    ) -> Result<Option<EnhancedSourceMetadata>> {
+    async fn get_source_metadata_by_url(&self, url: &str) -> Result<Option<EnhancedSourceMetadata>> {
         let env = match &self.env {
             Some(env) => env,
             None => return Ok(None),
@@ -1099,14 +1037,8 @@ impl PersistentEnhancedRAG {
         Ok(stats)
     }
 
-    /// Vector document search (placeholder for future versions)
-    /// Requires additional integration with arroy for full-functional search
-    #[allow(dead_code)]
-    pub async fn vector_similarity_search(
-        &self,
-        query_embedding: &[f32],
-        k: usize,
-    ) -> Result<Vec<Document>> {
+    /// Vector document search
+    pub async fn vector_similarity_search(&self, query_embedding: &[f32], k: usize) -> Result<Vec<Document>> {
         // TODO: Full implementation of vector search with arroy
         // Current version uses semantic search via embeddings in documents
         // For production usage required:
@@ -1115,9 +1047,8 @@ impl PersistentEnhancedRAG {
         // 3. Extraction of corresponding documents from cache
         // 4. Return sorted list of documents
 
-        // Temporary stub - returns empty list
         let _ = (query_embedding, k); // remove warnings about unused parameters
-        Ok(Vec::new())
+        Err(anyhow::anyhow!("vector_similarity_search not implemented - arroy index/search missing"))
     }
 
     // Inherit other methods with updated signatures
@@ -1127,8 +1058,7 @@ impl PersistentEnhancedRAG {
         max_retrieved_docs: usize,
     ) -> Result<String> {
         // Use extended version without user context
-        self.generate_article_with_enhanced_cache(query, max_retrieved_docs, None)
-            .await
+        self.generate_article_with_enhanced_cache(query, max_retrieved_docs, None).await
     }
 
     // Other base methods remain the same...
@@ -1256,10 +1186,7 @@ impl PersistentEnhancedRAG {
         };
 
         for url in documents_to_delete {
-            self.document_cache
-                .as_ref()
-                .unwrap()
-                .delete(&mut wtxn, &url)?;
+            self.document_cache.as_ref().unwrap().delete(&mut wtxn, &url)?;
             deleted_docs += 1;
         }
 
@@ -1277,19 +1204,14 @@ impl PersistentEnhancedRAG {
         };
 
         for hash in queries_to_delete {
-            self.query_cache
-                .as_ref()
-                .unwrap()
-                .delete(&mut wtxn, &hash)?;
+            self.query_cache.as_ref().unwrap().delete(&mut wtxn, &hash)?;
             deleted_queries += 1;
         }
 
         wtxn.commit()?;
 
-        info!(
-            "Extended cache cleanup completed: deleted {} documents and {} queries",
-            deleted_docs, deleted_queries
-        );
+        info!("Extended cache cleanup completed: deleted {} documents and {} queries",
+              deleted_docs, deleted_queries);
 
         Ok(CleanupStats {
             deleted_documents: deleted_docs,
