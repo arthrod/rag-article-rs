@@ -17,7 +17,7 @@ pub mod parallel_downloader;
 pub mod persistent;
 pub use ollama_utils::*;
 
-/// Структура для метаданных источника
+/// Structure for source metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SourceMetadata {
     pub url: String,
@@ -28,7 +28,7 @@ pub struct SourceMetadata {
     pub topics_covered: Vec<String>,
 }
 
-/// Структура для результата поиска SearXNG
+/// Structure for SearXNG search result
 #[derive(Debug, Deserialize)]
 pub struct SearchResult {
     pub results: Vec<SearchResultItem>,
@@ -41,20 +41,20 @@ pub struct SearchResultItem {
     pub content: Option<String>,
 }
 
-/// Структура для документа с контентом
+/// Structure for document with content
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Document {
     pub page_content: String,
     pub metadata: HashMap<String, String>,
 }
 
-/// Трейт для работы с поисковыми системами
+/// Trait for working with search engines
 #[async_trait]
 pub trait SearchWrapper {
     async fn search(&self, query: &str, num_results: u32) -> Result<Vec<SearchResultItem>>;
 }
 
-/// Реализация SearXNG поиска
+/// SearXNG search implementation
 pub struct SearxSearchWrapper {
     client: Client,
     host: String,
@@ -81,7 +81,7 @@ impl SearchWrapper for SearxSearchWrapper {
             urlencoding::encode(query)
         );
 
-        info!("Выполняем поиск: {}", query);
+        info!("Executing search: {}", query);
 
         let response = self.client.get(&search_url).send().await?;
 
@@ -90,18 +90,18 @@ impl SearchWrapper for SearxSearchWrapper {
         let mut results = search_result.results;
         results.truncate(num_results as usize);
 
-        info!("Найдено {} результатов", results.len());
+        info!("Found {} results", results.len());
         Ok(results)
     }
 }
 
-/// Трейт для загрузки документов
+/// Trait for loading documents
 #[async_trait]
 pub trait DocumentLoader {
     async fn load(&self, url: &str) -> Result<Vec<Document>>;
 }
 
-/// Реализация загрузчика документов с поддержкой рекурсивной загрузки
+/// Recursive document loader implementation
 pub struct RecursiveUrlLoader {
     client: Client,
 }
@@ -117,21 +117,21 @@ impl RecursiveUrlLoader {
         Self { client }
     }
 
-    /// Конвертация HTML в Markdown
+    /// Convert HTML to Markdown
     fn convert_html_to_markdown(&self, html_content: &str) -> String {
-        // Используем html2text для конвертации
+        // Use html2text for conversion
         let markdown = html2text::from_read(html_content.as_bytes(), 80);
 
-        // Очистка от лишних переносов строк
+        // Clean up excessive newlines
         let re_newlines = Regex::new(r"\n{3,}").unwrap();
         let cleaned = re_newlines.replace_all(&markdown, "\n\n");
 
-        // Удаление навигационных элементов
+        // Remove navigation elements
         let re_nav =
             Regex::new(r"(?m)^\s*\*\s*(Home|Menu|Navigation|Skip to|Back to top).*$").unwrap();
         let cleaned = re_nav.replace_all(&cleaned, "");
 
-        // Фильтрация коротких строк
+        // Filter short lines
         let lines: Vec<&str> = cleaned.lines().collect();
         let filtered_lines: Vec<&str> = lines
             .into_iter()
@@ -148,28 +148,28 @@ impl RecursiveUrlLoader {
 #[async_trait]
 impl DocumentLoader for RecursiveUrlLoader {
     async fn load(&self, url: &str) -> Result<Vec<Document>> {
-        info!("Загрузка документа: {}", url);
+        info!("Loading document: {}", url);
 
         let response = self.client.get(url).send().await?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("HTTP ошибка: {}", response.status()));
+            return Err(anyhow::anyhow!("HTTP error: {}", response.status()));
         }
 
         let html_content = response.text().await?;
 
-        // Конвертируем HTML в Markdown
+        // Convert HTML to Markdown
         let markdown_content = self.convert_html_to_markdown(&html_content);
 
         if markdown_content.trim().len() < 100 {
-            warn!("Документ слишком короткий: {}", url);
+            warn!("Document too short: {}", url);
             return Ok(vec![]);
         }
 
         let mut metadata = HashMap::new();
         metadata.insert("source_url".to_string(), url.to_string());
 
-        // Извлекаем заголовок страницы
+        // Extract page title
         let document = Html::parse_document(&html_content);
         let title_selector = Selector::parse("title").unwrap();
         let title = document
@@ -180,7 +180,7 @@ impl DocumentLoader for RecursiveUrlLoader {
 
         metadata.insert("source_title".to_string(), title);
 
-        // Извлекаем домен
+        // Extract domain
         if let Ok(parsed_url) = Url::parse(url) {
             if let Some(domain) = parsed_url.domain() {
                 metadata.insert("source_domain".to_string(), domain.to_string());
@@ -196,14 +196,14 @@ impl DocumentLoader for RecursiveUrlLoader {
     }
 }
 
-/// Трейт для векторных embeddings
+/// Trait for vector embeddings
 #[async_trait]
 pub trait EmbeddingModel {
     async fn embed_documents(&self, texts: &[String]) -> Result<Vec<Vec<f32>>>;
     async fn embed_query(&self, text: &str) -> Result<Vec<f32>>;
 }
 
-/// Простая реализация эмбеддингов через Ollama API
+/// Simple embedding implementation via Ollama API
 pub struct OllamaEmbeddings {
     client: Client,
     model_name: String,
@@ -234,7 +234,7 @@ impl EmbeddingModel for OllamaEmbeddings {
             let embedding = self.embed_query(text).await?;
             embeddings.push(embedding);
 
-            // Небольшая пауза между запросами
+            // Small pause between requests
             sleep(Duration::from_millis(100)).await;
         }
 
@@ -262,7 +262,7 @@ impl EmbeddingModel for OllamaEmbeddings {
     }
 }
 
-/// Простое векторное хранилище в памяти с базовой математикой
+/// Simple in-memory vector store with basic mathematics
 pub struct SimpleVectorStore {
     documents: Vec<Document>,
     embeddings: Array2<f32>,
@@ -281,10 +281,7 @@ impl SimpleVectorStore {
     }
 
     pub async fn add_documents(&mut self, documents: Vec<Document>) -> Result<()> {
-        info!(
-            "Добавление {} документов в векторное хранилище",
-            documents.len()
-        );
+        info!("Adding {} documents to vector store", documents.len());
 
         let texts: Vec<String> = documents
             .iter()
@@ -297,19 +294,19 @@ impl SimpleVectorStore {
             return Ok(());
         }
 
-        // Определяем размерность embeddings
+        // Determine embedding dimension
         if self.embedding_dim == 0 {
             self.embedding_dim = new_embeddings[0].len();
             self.embeddings = Array2::zeros((0, self.embedding_dim));
         }
 
-        // Конвертируем Vec<Vec<f32>> в Array2<f32>
+        // Convert Vec<Vec<f32>> to Array2<f32>
         let new_embeddings_array = Array2::from_shape_vec(
             (new_embeddings.len(), self.embedding_dim),
             new_embeddings.into_iter().flatten().collect(),
         )?;
 
-        // Объединяем старые и новые embeddings
+        // Combine old and new embeddings
         if self.embeddings.nrows() == 0 {
             self.embeddings = new_embeddings_array;
         } else {
@@ -319,12 +316,12 @@ impl SimpleVectorStore {
                 self.embedding_dim,
             ));
 
-            // Копируем старые embeddings
+            // Copy old embeddings
             self.embeddings
                 .slice_mut(ndarray::s![..old_embeddings.nrows(), ..])
                 .assign(&old_embeddings);
 
-            // Копируем новые embeddings
+            // Copy new embeddings
             self.embeddings
                 .slice_mut(ndarray::s![old_embeddings.nrows().., ..])
                 .assign(&new_embeddings_array);
@@ -332,7 +329,7 @@ impl SimpleVectorStore {
 
         self.documents.extend(documents);
 
-        info!("Документы успешно добавлены в векторное хранилище");
+        info!("Documents successfully added to vector store");
         Ok(())
     }
 
@@ -344,7 +341,7 @@ impl SimpleVectorStore {
         let query_embedding = self.embedding_model.embed_query(query).await?;
         let query_array = Array1::from(query_embedding);
 
-        // Вычисляем косинусное сходство для каждого документа
+        // Calculate cosine similarity for each document
         let mut similarities = Vec::new();
 
         for (idx, doc_embedding) in self.embeddings.outer_iter().enumerate() {
@@ -352,10 +349,10 @@ impl SimpleVectorStore {
             similarities.push((idx, similarity));
         }
 
-        // Сортируем по убыванию сходства
+        // Sort by similarity descending
         similarities.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
 
-        // Возвращаем топ-k документов
+        // Return top-k documents
         let results = similarities
             .into_iter()
             .take(k)
@@ -365,18 +362,18 @@ impl SimpleVectorStore {
         Ok(results)
     }
 
-    /// Геттер для документов (для тестирования)
+    /// Getter for documents (for testing)
     pub fn documents(&self) -> &Vec<Document> {
         &self.documents
     }
 
-    /// Геттер для embeddings (для тестирования)
+    /// Getter for embeddings (for testing)
     pub fn embeddings(&self) -> &Array2<f32> {
         &self.embeddings
     }
 }
 
-/// Вычисление косинусного сходства для Array1
+/// Calculate cosine similarity for Array1
 pub fn cosine_similarity_arrays(a: &Array1<f32>, b: &Array1<f32>) -> f32 {
     let dot_product = a.dot(b);
     let norm_a = a.dot(a).sqrt();
@@ -389,20 +386,20 @@ pub fn cosine_similarity_arrays(a: &Array1<f32>, b: &Array1<f32>) -> f32 {
     }
 }
 
-/// Вычисление косинусного сходства для Vec (для обратной совместимости)
+/// Calculate cosine similarity for Vec (for backward compatibility)
 pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     let array_a = Array1::from(a.to_vec());
     let array_b = Array1::from(b.to_vec());
     cosine_similarity_arrays(&array_a, &array_b)
 }
 
-/// Трейт для языковых моделей
+/// Trait for language models
 #[async_trait]
 pub trait LanguageModel {
     async fn generate(&self, prompt: &str) -> Result<String>;
 }
 
-/// Реализация для Ollama LLM
+/// Implementation for Ollama LLM
 pub struct OllamaLLM {
     client: Client,
     model_name: String,
@@ -412,7 +409,7 @@ pub struct OllamaLLM {
 impl OllamaLLM {
     pub fn new(model_name: String, ollama_host: Option<String>) -> Self {
         let client = Client::builder()
-            .timeout(Duration::from_secs(3600)) // 1 час на генерацию
+            .timeout(Duration::from_secs(3600)) // 1 hour for generation
             .build()
             .expect("Failed to create HTTP client");
 
@@ -441,7 +438,7 @@ impl LanguageModel for OllamaLLM {
         });
 
         // dbg!(request_body.clone());
-        info!("Отправляем запрос к Ollama для генерации текста");
+        info!("Sending request to Ollama for text generation");
 
         let response = self.client.post(&url).json(&request_body).send().await?;
 
@@ -458,7 +455,7 @@ impl LanguageModel for OllamaLLM {
     }
 }
 
-/// Основной генератор статей
+/// Main article generator
 pub struct EnhancedRAGArticleGenerator {
     search_wrapper: Box<dyn SearchWrapper + Send + Sync>,
     document_loader: Box<dyn DocumentLoader + Send + Sync>,
@@ -471,7 +468,7 @@ impl EnhancedRAGArticleGenerator {
     pub fn new(
         searx_host: String,
         model_name: String,
-        _embedding_model_name: String, // Не используется в упрощенной версии
+        _embedding_model_name: String, // Not used in simplified version
         ollama_host: Option<String>,
     ) -> Self {
         let search_wrapper = Box::new(SearxSearchWrapper::new(searx_host));
@@ -492,7 +489,7 @@ impl EnhancedRAGArticleGenerator {
         query: &str,
         num_results: u32,
     ) -> Result<Vec<String>> {
-        info!("Поиск URL для запроса: {}", query);
+        info!("Searching URLs for query: {}", query);
 
         let search_results = self.search_wrapper.search(query, num_results).await?;
 
@@ -502,20 +499,20 @@ impl EnhancedRAGArticleGenerator {
             if !urls.contains(&result.url) {
                 urls.push(result.url.clone());
 
-                // Извлекаем домен
+                // Extract domain
                 let domain = Url::parse(&result.url)
                     .ok()
                     .and_then(|url| url.domain().map(|d| d.to_string()))
                     .unwrap_or_else(|| "unknown".to_string());
 
-                // Сохраняем метаданные
+                // Save metadata
                 let metadata = SourceMetadata {
                     url: result.url,
                     title: result.title,
                     snippet: result.content.unwrap_or_default(),
                     domain,
-                    content_summary: String::new(), // Будет заполнено позже
-                    topics_covered: Vec::new(),     // Будет заполнено позже
+                    content_summary: String::new(), // Will be filled later
+                    topics_covered: Vec::new(),     // Will be filled later
                 };
 
                 self.sources_metadata.insert(self.source_counter, metadata);
@@ -523,12 +520,12 @@ impl EnhancedRAGArticleGenerator {
             }
         }
 
-        info!("Найдено {} уникальных URL", urls.len());
+        info!("Found {} unique URLs", urls.len());
         Ok(urls)
     }
 
     pub async fn load_and_process_documents(&mut self, urls: Vec<String>) -> Result<Vec<Document>> {
-        info!("Загрузка и обработка {} документов", urls.len());
+        info!("Loading and processing {} documents", urls.len());
 
         let mut all_documents = Vec::new();
 
@@ -538,13 +535,13 @@ impl EnhancedRAGArticleGenerator {
             match self.document_loader.load(url).await {
                 Ok(mut documents) => {
                     if !documents.is_empty() {
-                        // Добавляем метаданные источника
+                        // Add source metadata
                         for doc in &mut documents {
                             doc.metadata
                                 .insert("source_number".to_string(), source_number.to_string());
                         }
 
-                        // Обновляем метаданные источника с содержанием
+                        // Update source metadata with content
                         let combined_content: String = documents
                             .iter()
                             .map(|doc| doc.page_content.clone())
@@ -559,21 +556,21 @@ impl EnhancedRAGArticleGenerator {
                         }
 
                         all_documents.extend(documents);
-                        info!("Загружен документ {}/{}: {}", i + 1, urls.len(), url);
+                        info!("Loaded document {}/{}: {}", i + 1, urls.len(), url);
                     }
                 }
                 Err(e) => {
-                    warn!("Ошибка при загрузке {}: {}", url, e);
+                    warn!("Error loading {}: {}", url, e);
                 }
             }
         }
 
-        info!("Всего загружено {} документов", all_documents.len());
+        info!("Total loaded {} documents", all_documents.len());
         Ok(all_documents)
     }
 
     pub fn extract_content_summary(&self, content: &str) -> (String, Vec<String>) {
-        // Извлекаем заголовки
+        // Extract headers
         let re_headers = Regex::new(r"(?m)^#+\s+(.+)$").unwrap();
         let topics: Vec<String> = re_headers
             .captures_iter(content)
@@ -581,7 +578,7 @@ impl EnhancedRAGArticleGenerator {
             .take(5)
             .collect();
 
-        // Краткое содержание
+        // Brief summary
         let summary = if content.len() > 300 {
             format!("{}...", &content[..300].replace('\n', " ").trim())
         } else {
@@ -596,30 +593,30 @@ impl EnhancedRAGArticleGenerator {
         query: &str,
         max_retrieved_docs: usize,
     ) -> Result<String> {
-        info!("Начинаем генерацию статьи для запроса: {}", query);
+        info!("Starting article generation for query: {}", query);
 
-        // 1. Поиск URL
+        // 1. Search URLs
         let urls = self.search_and_collect_urls(query, 15).await?;
 
         if urls.is_empty() {
-            return Ok("Не найдено источников для создания статьи.".to_string());
+            return Ok("No sources found to create article.".to_string());
         }
 
-        // 2. Загрузка документов
+        // 2. Load documents
         // let documents = self.load_and_process_documents(urls).await?;
         let documents = self.load_and_process_documents_parallel(urls).await?;
 
         if documents.is_empty() {
-            return Ok("Не удалось загрузить документы из найденных источников.".to_string());
+            return Ok("Failed to load documents from found sources.".to_string());
         }
 
-        // 3. Простое ранжирование по релевантности без векторного поиска
+        // 3. Simple relevance ranking without vector search
         let retrieved_docs = self.simple_text_ranking(&documents, query, max_retrieved_docs);
 
-        // 4. Подготовка контекста
+        // 4. Prepare context
         let context_with_sources = self.prepare_context_with_sources(&retrieved_docs);
 
-        // 5. Создание промпта
+        // 5. Create prompt
         let article_prompt = format!(
             "You are an expert academic writer creating a comprehensive research article based on provided context documents.\n\n\
             AVAILABLE SOURCE DOCUMENTS:\n{}\n\n\
@@ -653,25 +650,25 @@ impl EnhancedRAGArticleGenerator {
             context_with_sources, query
         );
 
-        // 6. Генерация статьи
-        info!("Генерация статьи с помощью LLM...");
+        // 6. Generate article
+        info!("Generating article with LLM...");
         let article_text = self.language_model.generate(&article_prompt).await?;
 
-        // 7. Добавление списка источников
+        // 7. Add sources list
         let article_with_sources = self.add_enhanced_sources_list(&article_text);
 
-        info!("Статья успешно сгенерирована");
+        info!("Article successfully generated");
         Ok(article_with_sources)
     }
 
-    /// Простое ранжирование текста по релевантности без векторных вычислений
+    /// Simple text relevance ranking without vector calculations
     pub fn simple_text_ranking(
         &self,
         documents: &[Document],
         query: &str,
         max_docs: usize,
     ) -> Vec<Document> {
-        // Исправляем проблему с временными значениями
+        // Fix issue with temporary values
         let query_lower = query.to_lowercase();
         let query_words: Vec<&str> = query_lower.split_whitespace().collect();
 
@@ -688,23 +685,23 @@ impl EnhancedRAGArticleGenerator {
                 let mut score = 0.0;
 
                 for word in &query_words {
-                    // Подсчет упоминаний в контенте
+                    // Count occurrences in content
                     let content_matches = content_lower.matches(word).count() as f32;
                     score += content_matches * 1.0;
 
-                    // Бонус за упоминание в заголовке
+                    // Bonus for occurrence in title
                     let title_matches = title_lower.matches(word).count() as f32;
                     score += title_matches * 3.0;
                 }
 
-                // Нормализуем по длине документа
+                // Normalize by document length
                 let normalized_score = score / (doc.page_content.len() as f32 + 1.0) * 1000.0;
 
                 (doc.clone(), normalized_score)
             })
             .collect();
 
-        // Сортируем по убыванию релевантности
+        // Sort by relevance descending
         scored_docs.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
 
         scored_docs
@@ -719,7 +716,7 @@ impl EnhancedRAGArticleGenerator {
         query: &str,
         max_retrieved_docs: usize,
     ) -> Result<String> {
-        // Используем упрощенную версию без векторных вычислений
+        // Use simplified version without vector calculations
         self.generate_article_simple(query, max_retrieved_docs)
             .await
     }
@@ -746,7 +743,7 @@ impl EnhancedRAGArticleGenerator {
                 .unwrap_or(&"".to_string())
                 .clone();
 
-            // Получаем темы из метаданных
+            // Get topics from metadata
             let topics = if let Ok(source_num) = source_number.parse::<u32>() {
                 self.sources_metadata
                     .get(&source_num)
@@ -757,7 +754,7 @@ impl EnhancedRAGArticleGenerator {
             };
 
             let context_part = format!(
-                "\n=== ИСТОЧНИК {}: {} ===\nДомен: {}\nОсновные темы: {}\nКонтент:\n{}\n",
+                "\n=== SOURCE {}: {} ===\nDomain: {}\nKey Topics: {}\nContent:\n{}\n",
                 source_number, source_title, source_domain, topics, doc.page_content
             );
 
@@ -768,7 +765,7 @@ impl EnhancedRAGArticleGenerator {
     }
 
     pub fn add_enhanced_sources_list(&self, article_text: &str) -> String {
-        let mut sources_list = String::from("\n\n## Источники\n\n");
+        let mut sources_list = String::from("\n\n## Sources\n\n");
 
         for (source_num, metadata) in &self.sources_metadata {
             let topics_str = metadata
@@ -780,17 +777,17 @@ impl EnhancedRAGArticleGenerator {
                 .join(", ");
 
             sources_list.push_str(&format!(
-                "{}. **{}**\n   - URL: {}\n   - Домен: {}\n",
+                "{}. **{}**\n   - URL: {}\n   - Domain: {}\n",
                 source_num, metadata.title, metadata.url, metadata.domain
             ));
 
             if !topics_str.is_empty() {
-                sources_list.push_str(&format!("   - Основные темы: {}\n", topics_str));
+                sources_list.push_str(&format!("   - Key Topics: {}\n", topics_str));
             }
 
             if !metadata.content_summary.is_empty() {
                 sources_list.push_str(&format!(
-                    "   - Краткое содержание: {}\n",
+                    "   - Brief Summary: {}\n",
                     metadata.content_summary
                 ));
             }
@@ -801,7 +798,7 @@ impl EnhancedRAGArticleGenerator {
         format!("{}{}", article_text, sources_list)
     }
 
-    /// Геттер для метаданных источников (для тестирования)
+    /// Getter for sources metadata (for testing)
     pub fn sources_metadata(&self) -> &HashMap<u32, SourceMetadata> {
         &self.sources_metadata
     }

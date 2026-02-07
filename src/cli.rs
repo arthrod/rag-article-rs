@@ -5,6 +5,10 @@ use clap::{Arg, Command};
 use std::path::PathBuf;
 use tracing::{error, info};
 
+/// Constructs the command-line interface for the application.
+///
+/// This function defines all available arguments, flags, and options
+/// using the `clap` library.
 pub fn cli() -> Command {
     Command::new("enhanced-rag-generator")
         .about(
@@ -13,39 +17,39 @@ pub fn cli() -> Command {
         .version("2.0.0")
         .arg(
             Arg::new("query")
-                .help("Запрос для генерации статьи")
+                .help("Query for article generation")
                 .required(true)
                 .index(1),
         )
         .arg(
             Arg::new("searx-host")
                 .long("searx-host")
-                .help("Адрес SearXNG сервера")
+                .help("SearXNG server address")
                 .default_value("http://127.0.0.1:8080"),
         )
         .arg(
             Arg::new("ollama-host")
                 .long("ollama-host")
-                .help("Адрес Ollama сервера")
+                .help("Ollama server address")
                 .default_value("http://localhost:11434"),
         )
         .arg(
             Arg::new("model")
                 .long("model")
                 .short('m')
-                .help("Название модели Ollama для генерации текста")
+                .help("Ollama model name for text generation")
                 .default_value("qwen3:30b"),
         )
         .arg(
             Arg::new("embedding-model")
                 .long("embedding-model")
-                .help("Название модели для создания embeddings")
+                .help("Model name for creating embeddings")
                 .default_value("nomic-embed-text:latest"),
         )
         .arg(
             Arg::new("max-docs")
                 .long("max-docs")
-                .help("Максимальное количество документов для поиска")
+                .help("Maximum number of documents to search")
                 .default_value("15")
                 .value_parser(clap::value_parser!(usize)),
         )
@@ -53,95 +57,99 @@ pub fn cli() -> Command {
             Arg::new("output")
                 .long("output")
                 .short('o')
-                .help("Файл для сохранения результата")
+                .help("File to save the result")
                 .default_value("enhanced_article.md"),
         )
         .arg(
             Arg::new("database")
                 .long("database")
                 .short('d')
-                .help("Путь к базе данных для персистентного хранилища (необязательно)")
+                .help("Path to database for persistent storage (optional)")
                 .value_parser(clap::value_parser!(PathBuf)),
         )
         .arg(
             Arg::new("cache-days")
                 .long("cache-days")
-                .help("Максимальный возраст документов в кеше (дни)")
+                .help("Maximum age of documents in cache (days)")
                 .default_value("7")
                 .value_parser(clap::value_parser!(i64)),
         )
         .arg(
             Arg::new("similarity-threshold")
                 .long("similarity-threshold")
-                .help("Минимальное сходство для использования кешированных запросов (0.0-1.0)")
+                .help("Minimum similarity for using cached queries (0.0-1.0)")
                 .default_value("0.7")
                 .value_parser(clap::value_parser!(f32)),
         )
         .arg(
             Arg::new("quality-threshold")
                 .long("quality-threshold")
-                .help("Минимальный порог качества источников (0.0-1.0)")
+                .help("Minimum source quality threshold (0.0-1.0)")
                 .default_value("0.3")
                 .value_parser(clap::value_parser!(f32)),
         )
         .arg(
             Arg::new("enable-semantic")
                 .long("enable-semantic")
-                .help("Включить семантический поиск с embeddings")
+                .help("Enable semantic search with embeddings")
                 .action(clap::ArgAction::SetTrue),
         )
         .arg(
             Arg::new("enable-personalization")
                 .long("enable-personalization")
-                .help("Включить персонализацию (экспериментально)")
+                .help("Enable personalization (experimental)")
                 .action(clap::ArgAction::SetTrue),
         )
         .arg(
             Arg::new("show-cache-stats")
                 .long("show-cache-stats")
-                .help("Показать статистику кеша")
+                .help("Show cache statistics")
                 .action(clap::ArgAction::SetTrue),
         )
         .arg(
             Arg::new("show-quality-stats")
                 .long("show-quality-stats")
-                .help("Показать статистику качества источников")
+                .help("Show source quality statistics")
                 .action(clap::ArgAction::SetTrue),
         )
         .arg(
             Arg::new("cleanup-cache")
                 .long("cleanup-cache")
-                .help("Очистить устаревшие записи из кеша")
+                .help("Clean outdated entries from cache")
                 .action(clap::ArgAction::SetTrue),
         )
         .arg(
             Arg::new("expertise-level")
                 .long("expertise-level")
-                .help("Уровень экспертизы пользователя")
+                .help("User expertise level")
                 .value_parser(["beginner", "intermediate", "advanced", "expert"])
                 .default_value("intermediate"),
         )
         .arg(
             Arg::new("validate-env")
                 .long("validate-env")
-                .help("Проверить окружение перед запуском")
+                .help("Check environment before running")
                 .action(clap::ArgAction::SetTrue),
         )
         .arg(
             Arg::new("auto-install")
                 .long("auto-install")
-                .help("Автоматически установить модель если её нет")
+                .help("Automatically install model if missing")
                 .action(clap::ArgAction::SetTrue),
         )
         .arg(
             Arg::new("concurrent-downloads")
                 .long("concurrent-downloads")
-                .help("Максимальное количество одновременных загрузок")
+                .help("Maximum number of concurrent downloads")
                 .default_value("8")
                 .value_parser(clap::value_parser!(usize)),
         )
 }
 
+/// Main entry point for the CLI application logic.
+///
+/// Parses command line arguments, initializes the generator,
+/// and executes the requested actions (stats, cleanup, or generation).
 pub async fn run_cli() -> Result<()> {
     let matches = cli().get_matches();
 
@@ -156,7 +164,7 @@ pub async fn run_cli() -> Result<()> {
     let max_docs = *matches.get_one::<usize>("max-docs").unwrap();
     let output = matches.get_one::<String>("output").unwrap();
 
-    // Расширенные параметры
+    // Extended parameters
     let database_path = matches.get_one::<PathBuf>("database");
     let cache_days = *matches.get_one::<i64>("cache-days").unwrap();
     let similarity_threshold = *matches.get_one::<f32>("similarity-threshold").unwrap();
@@ -172,67 +180,69 @@ pub async fn run_cli() -> Result<()> {
     let expertise_level = matches.get_one::<String>("expertise-level").unwrap();
 
     info!("🚀 Enhanced RAG Article Generator v2.0 - AI-Powered Edition");
-    info!("Параметры запуска:");
-    info!("  📝 Запрос: {}", query);
+    info!("Startup parameters:");
+    info!("  📝 Query: {}", query);
     info!("  🔍 SearXNG: {}", searx_host);
     info!("  🤖 Ollama: {}", ollama_host);
-    info!("  🧠 LLM модель: {}", model);
-    info!("  🎯 Embedding модель: {}", embedding_model);
-    info!("  📊 Макс документов: {}", max_docs);
+    info!("  🧠 LLM Model: {}", model);
+    info!("  🎯 Embedding Model: {}", embedding_model);
+    info!("  📊 Max Docs: {}", max_docs);
     info!(
-        "  🔄 Параллельная загрузка: {} потоков",
+        "  🔄 Concurrent Downloads: {} threads",
         concurrent_downloads
     );
-    info!("  💾 Выходной файл: {}", output);
+    info!("  💾 Output File: {}", output);
 
     if let Some(db_path) = database_path {
-        info!("  🗄️ База данных: {:?}", db_path);
-        info!("  ⏰ Срок кеша: {} дней", cache_days);
-        info!("  🎯 Порог сходства: {:.2}", similarity_threshold);
-        info!("  ⭐ Порог качества: {:.2}", quality_threshold);
+        info!("  🗄️ Database: {:?}", db_path);
+        info!("  ⏰ Cache Duration: {} days", cache_days);
+        info!("  🎯 Similarity Threshold: {:.2}", similarity_threshold);
+        info!("  ⭐ Quality Threshold: {:.2}", quality_threshold);
         info!(
-            "  🧠 Семантический поиск: {}",
+            "  🧠 Semantic Search: {}",
             if enable_semantic {
-                "включен"
+                "enabled"
             } else {
-                "отключен"
+                "disabled"
             }
         );
         info!(
-            "  👤 Персонализация: {}",
+            "  👤 Personalization: {}",
             if enable_personalization {
-                "включена"
+                "enabled"
             } else {
-                "отключена"
+                "disabled"
             }
         );
-        info!("  🎓 Уровень экспертизы: {}", expertise_level);
+        info!("  🎓 Expertise Level: {}", expertise_level);
     } else {
-        info!("  💭 Режим: только в памяти (без персистентного хранилища)");
+        info!("  💭 Mode: Memory-only (no persistent storage)");
     }
 
-    // НОВОЕ: Валидация окружения перед началом работы
+    // NEW: Environment validation before starting work
     if validate_env || auto_install {
         println!("\n{}", "=".repeat(60));
-        println!("🔍 ПРОВЕРКА ОКРУЖЕНИЯ");
+        println!("🔍 ENVIRONMENT CHECK");
         println!("{}", "=".repeat(60));
 
         match validate_environment(&model, &ollama_host).await {
             Ok(()) => {
-                info!("✅ Окружение готово к работе");
+                info!("✅ Environment ready to work");
             }
             Err(e) => {
-                if auto_install && e.to_string().contains("не найдена") {
-                    println!("🔄 Попытка автоматической установки модели...");
+                // If auto-install is enabled and error is about missing model
+                if auto_install && e.to_string().contains("not found") {
+                    // Translated error check string might need adjustment in ollama_utils too
+                    println!("🔄 Attempting automatic model installation...");
 
                     match crate::ollama_utils::auto_install_model(&model).await {
                         Ok(()) => {
-                            info!("✅ Модель успешно установлена, проверяем заново...");
+                            info!("✅ Model installed successfully, re-checking...");
                             validate_environment(&model, &ollama_host).await?;
                         }
                         Err(install_error) => {
                             error!(
-                                "❌ Не удалось автоматически установить модель: {}",
+                                "❌ Failed to automatically install model: {}",
                                 install_error
                             );
                             return Err(e);
@@ -246,7 +256,7 @@ pub async fn run_cli() -> Result<()> {
         }
     }
 
-    // Настройки расширенного кеша
+    // Settings for the extended cache
     let cache_settings = CacheSettings {
         max_document_age_days: cache_days,
         min_query_similarity: similarity_threshold,
@@ -257,10 +267,10 @@ pub async fn run_cli() -> Result<()> {
         enable_personalization,
         auto_reindex_interval_hours: 24,
         max_vector_cache_size: 10000,
-        max_concurrent_downloads: concurrent_downloads, // НОВОЕ ПОЛЕ
+        max_concurrent_downloads: concurrent_downloads, // NEW FIELD
     };
 
-    // Пользовательский контекст для персонализации
+    // User context for personalization
     let user_context = if enable_personalization {
         let expertise = match expertise_level.as_str() {
             "beginner" => ExpertiseLevel::Beginner,
@@ -273,16 +283,16 @@ pub async fn run_cli() -> Result<()> {
         Some(UserContext {
             expertise_level: expertise,
             preferred_languages: vec!["en".to_string(), "ru".to_string()],
-            frequent_topics: vec![], // Будет заполняться из истории
+            frequent_topics: vec![], // Will be populated from history
             interaction_history: vec![chrono::Utc::now()],
         })
     } else {
         None
     };
 
-    // Создание расширенного генератора с клонированием значений
+    // Create the enhanced generator, cloning values as needed
     let mut generator = if let Some(db_path) = database_path {
-        info!("🔧 Инициализация расширенного персистентного хранилища...");
+        info!("🔧 Initializing enhanced persistent storage...");
         PersistentEnhancedRAG::new_with_persistent_storage(
             db_path,
             searx_host.clone(),
@@ -292,7 +302,7 @@ pub async fn run_cli() -> Result<()> {
             Some(cache_settings),
         )?
     } else {
-        info!("🧠 Инициализация в режиме памяти с AI возможностями...");
+        info!("🧠 Initializing in-memory mode with AI capabilities...");
         PersistentEnhancedRAG::new_in_memory(
             searx_host.clone(),
             model.clone(),
@@ -301,16 +311,16 @@ pub async fn run_cli() -> Result<()> {
         )?
     };
 
-    // Показать статистику кеша
+    // Show cache statistics
     if show_stats {
         let stats = generator.cache_stats().await?;
         println!("\n{}", "=".repeat(60));
-        println!("📊 СТАТИСТИКА КЕША");
+        println!("📊 CACHE STATISTICS");
         println!("{}", "=".repeat(60));
-        println!("📄 Всего документов: {}", stats.total_documents);
-        println!("🆕 Свежих документов: {}", stats.fresh_documents);
-        println!("🔍 Всего запросов: {}", stats.total_queries);
-        println!("💾 Размер БД: {:.2} МБ", stats.database_size_mb);
+        println!("📄 Total Documents: {}", stats.total_documents);
+        println!("🆕 Fresh Documents: {}", stats.fresh_documents);
+        println!("🔍 Total Queries: {}", stats.total_queries);
+        println!("💾 DB Size: {:.2} MB", stats.database_size_mb);
 
         if database_path.is_some() {
             let cache_efficiency = if stats.total_documents > 0 {
@@ -318,7 +328,7 @@ pub async fn run_cli() -> Result<()> {
             } else {
                 0.0
             };
-            println!("⚡ Эффективность кеша: {:.1}%", cache_efficiency);
+            println!("⚡ Cache Efficiency: {:.1}%", cache_efficiency);
         }
 
         println!("{}", "=".repeat(60));
@@ -328,26 +338,20 @@ pub async fn run_cli() -> Result<()> {
         }
     }
 
-    // Показать статистику качества источников
+    // Show source quality statistics
     if show_quality_stats {
         let quality_stats = generator.get_quality_stats().await?;
         println!("\n{}", "=".repeat(60));
-        println!("⭐ СТАТИСТИКА КАЧЕСТВА ИСТОЧНИКОВ");
+        println!("⭐ SOURCE QUALITY STATISTICS");
         println!("{}", "=".repeat(60));
-        println!("📊 Всего источников: {}", quality_stats.total_sources);
+        println!("📊 Total Sources: {}", quality_stats.total_sources);
+        println!("🏆 Very High Quality: {}", quality_stats.very_high_quality);
+        println!("✨ High Quality: {}", quality_stats.high_quality);
+        println!("👍 Medium Quality: {}", quality_stats.medium_quality);
+        println!("⚠️ Low Quality: {}", quality_stats.low_quality);
+        println!("❌ Very Low Quality: {}", quality_stats.very_low_quality);
         println!(
-            "🏆 Очень высокое качество: {}",
-            quality_stats.very_high_quality
-        );
-        println!("✨ Высокое качество: {}", quality_stats.high_quality);
-        println!("👍 Среднее качество: {}", quality_stats.medium_quality);
-        println!("⚠️ Низкое качество: {}", quality_stats.low_quality);
-        println!(
-            "❌ Очень низкое качество: {}",
-            quality_stats.very_low_quality
-        );
-        println!(
-            "📈 Средняя оценка качества: {:.3}",
+            "📈 Average Quality Score: {:.3}",
             quality_stats.average_quality_score
         );
         println!("{}", "=".repeat(60));
@@ -357,21 +361,21 @@ pub async fn run_cli() -> Result<()> {
         }
     }
 
-    // Очистка кеша
+    // Clean up cache
     if cleanup_cache {
-        println!("\n🧹 Выполняется очистка кеша...");
+        println!("\n🧹 Performing cache cleanup...");
         let cleanup_stats = generator.cleanup_cache().await?;
-        println!("✅ Удалено документов: {}", cleanup_stats.deleted_documents);
-        println!("✅ Удалено запросов: {}", cleanup_stats.deleted_queries);
+        println!("✅ Documents Removed: {}", cleanup_stats.deleted_documents);
+        println!("✅ Queries Removed: {}", cleanup_stats.deleted_queries);
 
         if cleanup_cache && !show_stats && !show_quality_stats {
             return Ok(());
         }
     }
 
-    // Генерация статьи с расширенными возможностями
+    // Generate article with extended capabilities
     println!("\n{}", "=".repeat(80));
-    println!("🚀 ГЕНЕРАЦИЯ AI-ENHANCED СТАТЬИ");
+    println!("🚀 GENERATING AI-ENHANCED ARTICLE");
     println!("{}", "=".repeat(80));
 
     let start_time = std::time::Instant::now();
@@ -384,38 +388,38 @@ pub async fn run_cli() -> Result<()> {
             let generation_time = start_time.elapsed();
 
             println!("\n{}", "=".repeat(80));
-            println!("✨ СГЕНЕРИРОВАННАЯ AI-ENHANCED СТАТЬЯ");
+            println!("✨ GENERATED AI-ENHANCED ARTICLE");
             println!("{}", "=".repeat(80));
             println!("\n{}", article);
 
-            // Сохранение в файл
+            // Save to file
             tokio::fs::write(output, &article).await?;
 
             println!("\n{}", "=".repeat(60));
-            println!("📊 РЕЗУЛЬТАТЫ ГЕНЕРАЦИИ");
+            println!("📊 GENERATION RESULTS");
             println!("{}", "=".repeat(60));
             println!(
-                "⏱️ Время генерации: {:.2} секунд",
+                "⏱️ Generation Time: {:.2} seconds",
                 generation_time.as_secs_f32()
             );
-            println!("📄 Длина статьи: {} символов", article.len());
-            println!("📝 Сохранено в: {}", output);
+            println!("📄 Article Length: {} characters", article.len());
+            println!("📝 Saved to: {}", output);
 
-            // Показываем финальную статистику
+            // Show final statistics
             if database_path.is_some() {
                 let final_stats = generator.cache_stats().await?;
-                println!("\n🔄 ОБНОВЛЕННАЯ СТАТИСТИКА КЕША:");
+                println!("\n🔄 UPDATED CACHE STATISTICS:");
                 println!(
-                    "  📄 Документов: {} (свежих: {})",
+                    "  📄 Documents: {} (fresh: {})",
                     final_stats.total_documents, final_stats.fresh_documents
                 );
-                println!("  🔍 Запросов: {}", final_stats.total_queries);
-                println!("  💾 Размер БД: {:.2} МБ", final_stats.database_size_mb);
+                println!("  🔍 Queries: {}", final_stats.total_queries);
+                println!("  💾 DB Size: {:.2} MB", final_stats.database_size_mb);
 
                 let quality_stats = generator.get_quality_stats().await?;
                 if quality_stats.total_sources > 0 {
                     println!(
-                        "  ⭐ Средняя оценка качества: {:.3}",
+                        "  ⭐ Average Quality Score: {:.3}",
                         quality_stats.average_quality_score
                     );
                 }
@@ -427,44 +431,44 @@ pub async fn run_cli() -> Result<()> {
             let generation_time = start_time.elapsed();
 
             error!(
-                "❌ Ошибка при генерации статьи (через {:.2}с): {}",
+                "❌ Error generating article (after {:.2}s): {}",
                 generation_time.as_secs_f32(),
                 e
             );
 
-            // Показываем детальную информацию об ошибке
+            // Show detailed error information
             let mut source = e.source();
             let mut error_chain = 1;
             while let Some(err) = source {
-                error!("  📍 Причина {}: {}", error_chain, err);
+                error!("  📍 Cause {}: {}", error_chain, err);
                 source = err.source();
                 error_chain += 1;
             }
 
-            // Диагностическая информация
-            error!("🔍 ДИАГНОСТИКА:");
-            error!("  🌐 SearXNG доступен: {}", searx_host);
-            error!("  🤖 Ollama доступен: {}", ollama_host);
-            error!("  🧠 Модель: {}", model);
-            error!("  🔄 Параллельные потоки: {}", concurrent_downloads);
+            // Diagnostic information
+            error!("🔍 DIAGNOSTICS:");
+            error!("  🌐 SearXNG Available: {}", searx_host);
+            error!("  🤖 Ollama Available: {}", ollama_host);
+            error!("  🧠 Model: {}", model);
+            error!("  🔄 Parallel Threads: {}", concurrent_downloads);
 
             if let Some(db_path) = database_path {
-                error!("  🗄️ Путь к БД: {:?}", db_path);
+                error!("  🗄️ Database Path: {:?}", db_path);
             }
 
-            // Предложения по исправлению
-            error!("💡 ВОЗМОЖНЫЕ РЕШЕНИЯ:");
+            // Suggestions for fixing
+            error!("💡 POSSIBLE SOLUTIONS:");
             if e.to_string().contains("not found") {
-                error!("  • Установите модель: ollama pull {}", model);
-                error!("  • Или используйте другую модель с параметром --model");
+                error!("  • Install model: ollama pull {}", model);
+                error!("  • Or use another model with --model");
             }
             if e.to_string().contains("connection") || e.to_string().contains("network") {
-                error!("  • Проверьте что Ollama запущен: ollama serve");
-                error!("  • Проверьте адрес Ollama: {}", ollama_host);
+                error!("  • Check if Ollama is running: ollama serve");
+                error!("  • Check Ollama address: {}", ollama_host);
             }
-            error!("  • Запустите с --validate-env для диагностики");
-            error!("  • Запустите с --auto-install для автоустановки");
-            error!("  • Уменьшите количество потоков: --concurrent-downloads 4");
+            error!("  • Run with --validate-env for diagnostics");
+            error!("  • Run with --auto-install for automatic installation");
+            error!("  • Reduce number of threads: --concurrent-downloads 4");
 
             Err(e)
         }
