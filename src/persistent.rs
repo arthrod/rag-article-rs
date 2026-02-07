@@ -8,9 +8,12 @@ use std::collections::HashMap;
 use std::path::Path;
 use tracing::info;
 
-use crate::{Document, EnhancedRAGArticleGenerator, SourceMetadata, cosine_similarity, EmbeddingModel, OllamaEmbeddings};
+use crate::{
+    cosine_similarity, Document, EmbeddingModel, EnhancedRAGArticleGenerator, OllamaEmbeddings,
+    SourceMetadata,
+};
 
-/// Расширенные метаданные источника с аналитикой
+/// Extended source metadata with analytics
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EnhancedSourceMetadata {
     pub url: String,
@@ -18,8 +21,8 @@ pub struct EnhancedSourceMetadata {
     pub domain: String,
     pub content_summary: String,
     pub topics_covered: Vec<String>,
-    
-    // Новые поля для аналитики
+
+    // New analytics fields
     pub usage_count: u32,
     pub quality_score: f32,
     pub language: String,
@@ -44,14 +47,14 @@ pub enum SourceType {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, PartialOrd)]
 pub enum ReliabilityRating {
-    VeryHigh,    // 0.9+: arXiv, официальная документация
-    High,        // 0.7-0.9: проверенные блоги, GitHub
-    Medium,      // 0.5-0.7: обычные сайты
-    Low,         // 0.3-0.5: сомнительные источники
-    VeryLow,     // 0.0-0.3: спам, дезинформация
+    VeryHigh, // 0.9+: arXiv, official documentation
+    High,     // 0.7-0.9: verified blogs, GitHub
+    Medium,   // 0.5-0.7: regular websites
+    Low,      // 0.3-0.5: questionable sources
+    VeryLow,  // 0.0-0.3: spam, misinformation
 }
 
-/// Структура для кешированного документа с векторными данными
+/// Cached document structure with vector data
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CachedDocument {
     pub url: String,
@@ -68,12 +71,12 @@ pub struct CachedDocument {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocumentQualityMetrics {
     pub content_length: usize,
-    pub structure_score: f32,  // Наличие заголовков, списков
-    pub readability_score: f32, // Сложность текста
-    pub technical_depth: f32,   // Глубина технического контента
+    pub structure_score: f32,   // Presence of headers, lists
+    pub readability_score: f32, // Text complexity
+    pub technical_depth: f32,   // Depth of technical content
 }
 
-/// Кешированный запрос с семантическим анализом
+/// Cached query with semantic analysis
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CachedQuery {
     pub query: String,
@@ -114,36 +117,49 @@ pub enum ExpertiseLevel {
 }
 
 impl CachedDocument {
-    /// Проверяет свежесть документа
+    /// Checks if the document is fresh
     pub fn is_fresh(&self, max_days: i64) -> bool {
         let age = Utc::now() - self.processed_at;
         age.num_days() < max_days
     }
 
-    /// Создает хеш содержимого
+    /// Creates a hash of the content
     pub fn content_hash(content: &str) -> String {
         format!("{:x}", md5::compute(content))
     }
 
-    /// Анализирует качество документа
+    /// Analyzes document quality
     pub fn analyze_quality(content: &str) -> DocumentQualityMetrics {
         let content_length = content.len();
-        
-        // Анализ структуры (заголовки, списки, код)
+
+        // Structure analysis (headers, lists, code)
         let header_count = content.matches('#').count() as f32;
         let list_count = content.matches("- ").count() as f32;
         let code_count = content.matches("```").count() as f32;
-        let structure_score = (header_count + list_count + code_count * 2.0) / (content_length as f32 / 1000.0).max(1.0);
+        let structure_score = (header_count + list_count + code_count * 2.0)
+            / (content_length as f32 / 1000.0).max(1.0);
 
-        // Оценка читабельности (простая метрика)
+        // Readability score (simple metric)
         let sentences = content.split('.').count() as f32;
         let words = content.split_whitespace().count() as f32;
-        let avg_sentence_length = if sentences > 0.0 { words / sentences } else { 0.0 };
+        let avg_sentence_length = if sentences > 0.0 {
+            words / sentences
+        } else {
+            0.0
+        };
         let readability_score = (20.0 - avg_sentence_length.min(20.0)) / 20.0;
 
-        // Техническая глубина (ключевые слова, примеры кода)
-        let technical_keywords = ["function", "class", "implementation", "algorithm", "performance", "optimization"];
-        let tech_count = technical_keywords.iter()
+        // Technical depth (keywords, code examples)
+        let technical_keywords = [
+            "function",
+            "class",
+            "implementation",
+            "algorithm",
+            "performance",
+            "optimization",
+        ];
+        let tech_count = technical_keywords
+            .iter()
             .map(|&word| content.to_lowercase().matches(word).count())
             .sum::<usize>() as f32;
         let technical_depth = (tech_count / (content_length as f32 / 1000.0).max(1.0)).min(1.0);
@@ -156,11 +172,14 @@ impl CachedDocument {
         }
     }
 
-    /// Определяет язык контента (упрощенная версия)
+    /// Detects content language (simplified version)
     pub fn detect_language(content: &str) -> String {
-        let russian_chars = content.chars().filter(|c| "абвгдеёжзийклмнопрстуфхцчшщъыьэюя".contains(*c)).count();
+        let russian_chars = content
+            .chars()
+            .filter(|c| "абвгдеёжзийклмнопрстуфхцчшщъыьэюя".contains(*c))
+            .count();
         let total_chars = content.chars().filter(|c| c.is_alphabetic()).count();
-        
+
         if total_chars > 0 && (russian_chars as f32 / total_chars as f32) > 0.1 {
             "ru".to_string()
         } else {
@@ -168,12 +187,12 @@ impl CachedDocument {
         }
     }
 
-    /// Извлекает основные темы из контента
+    /// Extracts main topics from content
     pub fn extract_topics(content: &str) -> Vec<String> {
-        // Простое извлечение тем на основе заголовков
+        // Simple topic extraction based on headers
         let lines: Vec<&str> = content.lines().collect();
         let mut topics = Vec::new();
-        
+
         for line in lines {
             if line.starts_with('#') {
                 let topic = line.trim_start_matches('#').trim();
@@ -182,20 +201,20 @@ impl CachedDocument {
                 }
             }
         }
-        
+
         topics.truncate(10);
         topics
     }
 }
 
 impl EnhancedSourceMetadata {
-    /// Создает расширенные метаданные из базовых
+    /// Creates enhanced metadata from basic
     pub fn from_basic(basic: &SourceMetadata, content: &str) -> Self {
         let quality_score = Self::calculate_quality_score(&basic.domain, content);
         let reliability_rating = Self::determine_reliability(&basic.domain, quality_score);
         let content_type = Self::classify_source_type(&basic.url, content);
         let language = CachedDocument::detect_language(content);
-        
+
         Self {
             url: basic.url.clone(),
             title: basic.title.clone(),
@@ -213,26 +232,32 @@ impl EnhancedSourceMetadata {
         }
     }
 
-    /// Вычисляет оценку качества источника
+    /// Calculates source quality score
     fn calculate_quality_score(domain: &str, content: &str) -> f32 {
-        let mut score = 0.5; // базовая оценка
-        
-        // Бонус за авторитетные домены
+        let mut score = 0.5; // base score
+
+        // Bonus for authoritative domains
         let trusted_domains = [
-            "arxiv.org", "github.com", "stackoverflow.com", "docs.rs", 
-            "rust-lang.org", "mozilla.org", "wikipedia.org", "medium.com"
+            "arxiv.org",
+            "github.com",
+            "stackoverflow.com",
+            "docs.rs",
+            "rust-lang.org",
+            "mozilla.org",
+            "wikipedia.org",
+            "medium.com",
         ];
-        
+
         if trusted_domains.iter().any(|&d| domain.contains(d)) {
             score += 0.3;
         }
 
-        // Бонус за качество контента
+        // Bonus for content quality
         let quality_metrics = CachedDocument::analyze_quality(content);
         score += quality_metrics.structure_score * 0.2;
         score += quality_metrics.technical_depth * 0.2;
 
-        // Штраф за короткий контент
+        // Penalty for short content
         if content.len() < 500 {
             score -= 0.2;
         }
@@ -240,11 +265,11 @@ impl EnhancedSourceMetadata {
         score.clamp(0.0, 1.0)
     }
 
-    /// Определяет рейтинг надежности
+    /// Determines reliability rating
     fn determine_reliability(domain: &str, quality_score: f32) -> ReliabilityRating {
         let academic_domains = ["arxiv.org", "acm.org", "ieee.org", "springer.com"];
         let official_docs = ["docs.rs", "rust-lang.org", "github.com"];
-        
+
         if academic_domains.iter().any(|&d| domain.contains(d)) {
             ReliabilityRating::VeryHigh
         } else if official_docs.iter().any(|&d| domain.contains(d)) {
@@ -260,7 +285,7 @@ impl EnhancedSourceMetadata {
         }
     }
 
-    /// Классифицирует тип источника
+    /// Classifies source type
     fn classify_source_type(url: &str, content: &str) -> SourceType {
         if url.contains("arxiv.org") || url.contains("acm.org") {
             SourceType::Academic
@@ -279,10 +304,10 @@ impl EnhancedSourceMetadata {
         }
     }
 
-    /// Увеличивает счетчик использования
+    /// Increments usage counter
     pub fn increment_usage(&mut self) {
         self.usage_count += 1;
-        // Небольшое увеличение качества при частом использовании
+        // Small quality increase for frequent usage
         if self.usage_count % 10 == 0 {
             self.quality_score = (self.quality_score + 0.01).min(1.0);
         }
@@ -290,22 +315,28 @@ impl EnhancedSourceMetadata {
 }
 
 impl CachedQuery {
-    /// Создает хеш запроса
+    /// Creates query hash
     pub fn query_hash(query: &str) -> String {
         format!("{:x}", md5::compute(query.to_lowercase().trim()))
     }
 
-    /// Анализирует тип запроса
+    /// Analyzes query type
     pub fn analyze_query_type(query: &str) -> QueryType {
         let query_lower = query.to_lowercase();
-        
+
         if query_lower.contains("tutorial") || query_lower.contains("how to") {
             QueryType::Tutorial
-        } else if query_lower.contains("vs") || query_lower.contains("compare") || query_lower.contains("difference") {
+        } else if query_lower.contains("vs")
+            || query_lower.contains("compare")
+            || query_lower.contains("difference")
+        {
             QueryType::Comparison
         } else if query_lower.contains("reference") || query_lower.contains("documentation") {
             QueryType::Reference
-        } else if query_lower.contains("error") || query_lower.contains("fix") || query_lower.contains("troubleshoot") {
+        } else if query_lower.contains("error")
+            || query_lower.contains("fix")
+            || query_lower.contains("troubleshoot")
+        {
             QueryType::Troubleshooting
         } else if query_lower.contains("best practices") || query_lower.contains("guidelines") {
             QueryType::BestPractices
@@ -316,60 +347,74 @@ impl CachedQuery {
         }
     }
 
-    /// Извлекает семантические темы из запроса
+    /// Extracts semantic topics from query
     pub fn extract_semantic_topics(query: &str) -> Vec<String> {
         let words: Vec<&str> = query.split_whitespace().collect();
         let mut topics = Vec::new();
-        
-        // Простое извлечение ключевых технических терминов
+
+        // Simple extraction of key technical terms
         let tech_terms = [
-            "rust", "python", "javascript", "async", "web", "framework", 
-            "database", "api", "performance", "security", "testing", "deployment"
+            "rust",
+            "python",
+            "javascript",
+            "async",
+            "web",
+            "framework",
+            "database",
+            "api",
+            "performance",
+            "security",
+            "testing",
+            "deployment",
         ];
-        
+
         for word in words {
             let word_lower = word.to_lowercase();
             if tech_terms.contains(&word_lower.as_str()) {
                 topics.push(word_lower);
             }
         }
-        
+
         topics.dedup();
         topics
     }
 
-    /// Вычисляет семантическое сходство с другим запросом
+    /// Calculates semantic similarity with another query
     pub fn semantic_similarity(&self, other: &CachedQuery) -> f32 {
         if let (Some(ref embedding1), Some(ref embedding2)) = (&self.embedding, &other.embedding) {
             cosine_similarity(embedding1, embedding2)
         } else {
-            // Fallback на текстовое сходство
+            // Fallback to text similarity
             let topics1: std::collections::HashSet<_> = self.semantic_topics.iter().collect();
             let topics2: std::collections::HashSet<_> = other.semantic_topics.iter().collect();
-            
+
             let intersection = topics1.intersection(&topics2).count() as f32;
             let union = topics1.union(&topics2).count() as f32;
-            
-            if union > 0.0 { intersection / union } else { 0.0 }
+
+            if union > 0.0 {
+                intersection / union
+            } else {
+                0.0
+            }
         }
     }
 }
 
-/// Расширенные настройки кеширования
+/// Extended cache settings
 #[derive(Debug, Clone)]
 pub struct CacheSettings {
     pub max_document_age_days: i64,
     pub min_query_similarity: f32,
     pub max_cached_docs: usize,
     pub embedding_dim: Option<usize>,
-    
-    // Новые настройки
+
+    // New settings
     pub enable_semantic_search: bool,
     pub min_quality_score: f32,
     pub enable_personalization: bool,
     pub auto_reindex_interval_hours: u64,
     pub max_vector_cache_size: usize,
-    pub max_concurrent_downloads: usize, // НОВОЕ ПОЛЕ
+    pub max_concurrent_downloads: usize, // NEW FIELD
 }
 
 impl Default for CacheSettings {
@@ -384,31 +429,32 @@ impl Default for CacheSettings {
             enable_personalization: false,
             auto_reindex_interval_hours: 24,
             max_vector_cache_size: 10000,
-            max_concurrent_downloads: 8, // НОВОЕ ЗНАЧЕНИЕ ПО УМОЛЧАНИЮ
+            max_concurrent_downloads: 8, // NEW DEFAULT VALUE
         }
     }
 }
 
-/// Расширенный Persistent Enhanced RAG с AI возможностями
+/// Persistent Enhanced RAG with AI capabilities
 pub struct PersistentEnhancedRAG {
     inner: EnhancedRAGArticleGenerator,
     env: Option<Env>,
     document_cache: Option<Database<Str, SerdeBincode<CachedDocument>>>,
     query_cache: Option<Database<Str, SerdeBincode<CachedQuery>>>,
-    metadata_cache: Option<Database<U32<byteorder::NativeEndian>, SerdeBincode<EnhancedSourceMetadata>>>,
-    
-    /// Векторная база данных (arroy) для семантического поиска
-    /// Используется для хранения и поиска векторных представлений документов
+    metadata_cache:
+        Option<Database<U32<byteorder::NativeEndian>, SerdeBincode<EnhancedSourceMetadata>>>,
+
+    /// Vector database (arroy) for semantic search
+    /// Used for storing and searching document vector representations
     #[allow(dead_code)]
     vector_db: Option<arroy::Database<Euclidean>>,
-    
+
     cache_settings: CacheSettings,
     embedding_model: Option<Box<dyn EmbeddingModel + Send + Sync>>,
     next_source_id: u32,
 }
 
 impl PersistentEnhancedRAG {
-    /// Создает новый экземпляр с памятью
+    /// Creates a new in-memory instance
     pub fn new_in_memory(
         searx_host: String,
         model_name: String,
@@ -440,7 +486,7 @@ impl PersistentEnhancedRAG {
         })
     }
 
-    /// Создает новый экземпляр с персистентным хранилищем
+    /// Creates a new instance with persistent storage
     pub fn new_with_persistent_storage<P: AsRef<Path>>(
         db_path: P,
         searx_host: String,
@@ -449,11 +495,14 @@ impl PersistentEnhancedRAG {
         ollama_host: Option<String>,
         cache_settings: Option<CacheSettings>,
     ) -> Result<Self> {
-        info!("Инициализация расширенного персистентного хранилища: {:?}", db_path.as_ref());
+        info!(
+            "Initializing extended persistent storage: {:?}",
+            db_path.as_ref()
+        );
 
         let env = unsafe {
             EnvOpenOptions::new()
-                .map_size(4 * 1024 * 1024 * 1024) // 4GB для векторов
+                .map_size(4 * 1024 * 1024 * 1024) // 4GB for vectors
                 .max_dbs(15)
                 .open(db_path)?
         };
@@ -479,7 +528,7 @@ impl PersistentEnhancedRAG {
             ollama_host,
         )) as Box<dyn EmbeddingModel + Send + Sync>);
 
-        info!("Расширенное персистентное хранилище инициализировано");
+        info!("Extended persistent storage initialized");
 
         Ok(Self {
             inner,
@@ -494,35 +543,36 @@ impl PersistentEnhancedRAG {
         })
     }
 
-    /// Генерирует статью с использованием расширенного AI кеша
+    /// Generates article using extended AI cache
     pub async fn generate_article_with_enhanced_cache(
         &mut self,
         query: &str,
         max_retrieved_docs: usize,
         user_context: Option<UserContext>,
     ) -> Result<String> {
-        info!("Генерация статьи с расширенным AI кешем для: {}", query);
+        info!("Generating article with extended AI cache for: {}", query);
 
         if self.env.is_none() {
             return self.inner.generate_article(query, max_retrieved_docs).await;
         }
 
-        // 1. Семантический поиск похожих запросов
+        // 1. Semantic search for similar queries
         let similar_queries = if self.cache_settings.enable_semantic_search {
             self.semantic_query_search(query).await?
         } else {
             self.find_similar_queries(query).await?
         };
 
-        // 2. Извлечение качественных документов
+        // 2. Extract quality documents
         let mut cached_docs = Vec::new();
         let mut fresh_urls = Vec::new();
 
         for cached_query in similar_queries {
             for url in cached_query.related_urls {
                 if let Some(doc) = self.get_cached_document(&url).await? {
-                    if doc.is_fresh(self.cache_settings.max_document_age_days) && 
-                       self.meets_quality_threshold(&doc) {
+                    if doc.is_fresh(self.cache_settings.max_document_age_days)
+                        && self.meets_quality_threshold(&doc)
+                    {
                         cached_docs.push(self.cached_to_document(&doc));
                     } else {
                         fresh_urls.push(url);
@@ -531,47 +581,61 @@ impl PersistentEnhancedRAG {
             }
         }
 
-        // 3. Интеллектуальная загрузка новых документов
+        // 3. Intelligent loading of new documents
         if cached_docs.len() < max_retrieved_docs {
             let needed_docs = max_retrieved_docs - cached_docs.len();
-            let new_urls = self.inner.search_and_collect_urls(query, needed_docs as u32).await?;
-            
-            // Фильтрация по качественным источникам
+            let new_urls = self
+                .inner
+                .search_and_collect_urls(query, needed_docs as u32)
+                .await?;
+
+            // Filtering by quality sources
             let filtered_urls = self.filter_quality_urls(new_urls).await?;
             fresh_urls.extend(filtered_urls);
         }
 
-        // 4. Загрузка и расширенное кеширование с параллельной загрузкой
+        // 4. Loading and extended caching with parallel download
         if !fresh_urls.is_empty() {
-            // ИСПОЛЬЗУЕМ ПАРАЛЛЕЛЬНУЮ ЗАГРУЗКУ
-            let new_docs = self.inner.load_documents_with_concurrency_limit(
-                fresh_urls.clone(), 
-                self.cache_settings.max_concurrent_downloads
-            ).await?;
-            
+            // USE PARALLEL DOWNLOAD
+            let new_docs = self
+                .inner
+                .load_documents_with_concurrency_limit(
+                    fresh_urls.clone(),
+                    self.cache_settings.max_concurrent_downloads,
+                )
+                .await?;
+
             for doc in &new_docs {
                 self.enhanced_cache_document(doc).await?;
             }
-            
+
             cached_docs.extend(new_docs);
         }
 
-        // 5. Кеширование запроса с семантическим анализом
-        self.enhanced_cache_query(query, &fresh_urls, user_context).await?;
+        // 5. Caching query with semantic analysis
+        self.enhanced_cache_query(query, &fresh_urls, user_context)
+            .await?;
 
-        // 6. Интеллектуальное ранжирование
-        let retrieved_docs = self.intelligent_ranking(&cached_docs, query, max_retrieved_docs).await?;
+        // 6. Intelligent ranking
+        let retrieved_docs = self
+            .intelligent_ranking(&cached_docs, query, max_retrieved_docs)
+            .await?;
         let context = self.inner.prepare_context_with_sources(&retrieved_docs);
-        
-        // 7. Генерация с расширенным промптом
-        let article_prompt = self.build_ai_enhanced_prompt(query, &context, &cached_docs).await?;
+
+        // 7. Generation with extended prompt
+        let article_prompt = self
+            .build_ai_enhanced_prompt(query, &context, &cached_docs)
+            .await?;
         let article_text = self.inner.language_model.generate(&article_prompt).await?;
-        
-        info!("Статья сгенерирована с использованием {} документов (AI-enhanced)", retrieved_docs.len());
+
+        info!(
+            "Article generated using {} documents (AI-enhanced)",
+            retrieved_docs.len()
+        );
         Ok(self.inner.add_enhanced_sources_list(&article_text))
     }
 
-    /// Семантический поиск запросов с использованием embeddings
+    /// Semantic query search using embeddings
     async fn semantic_query_search(&self, query: &str) -> Result<Vec<CachedQuery>> {
         let env = match &self.env {
             Some(env) => env,
@@ -603,7 +667,7 @@ impl PersistentEnhancedRAG {
                 }
             }
 
-            // Сортировка по убыванию сходства
+            // Sort by similarity descending
             similar_queries.sort_by(|a, b| {
                 let sim_a = a.semantic_similarity(&CachedQuery {
                     query: query.to_string(),
@@ -625,43 +689,45 @@ impl PersistentEnhancedRAG {
                     semantic_topics: CachedQuery::extract_semantic_topics(query),
                     user_context: None,
                 });
-                sim_b.partial_cmp(&sim_a).unwrap_or(std::cmp::Ordering::Equal)
+                sim_b
+                    .partial_cmp(&sim_a)
+                    .unwrap_or(std::cmp::Ordering::Equal)
             });
 
             similar_queries.truncate(5);
             Ok(similar_queries)
         } else {
-            // Fallback на текстовый поиск
+            // Fallback to text search
             self.find_similar_queries(query).await
         }
     }
 
-    /// Проверяет соответствие документа порогу качества
+    /// Checks if document meets quality threshold
     fn meets_quality_threshold(&self, doc: &CachedDocument) -> bool {
-        doc.quality_metrics.structure_score >= self.cache_settings.min_quality_score ||
-        doc.quality_metrics.technical_depth >= self.cache_settings.min_quality_score
+        doc.quality_metrics.structure_score >= self.cache_settings.min_quality_score
+            || doc.quality_metrics.technical_depth >= self.cache_settings.min_quality_score
     }
 
-    /// Фильтрует URL по качественным источникам
+    /// Filters URLs by quality sources
     async fn filter_quality_urls(&self, urls: Vec<String>) -> Result<Vec<String>> {
         let mut filtered = Vec::new();
-        
+
         for url in urls {
-            // Проверяем метаданные источника если есть
+            // Check source metadata if exists
             if let Some(metadata) = self.get_source_metadata_by_url(&url).await? {
                 if metadata.reliability_rating >= ReliabilityRating::Medium {
                     filtered.push(url);
                 }
             } else {
-                // Если метаданных нет, добавляем (будет оценено при загрузке)
+                // If no metadata, add (will be evaluated on load)
                 filtered.push(url);
             }
         }
-        
+
         Ok(filtered)
     }
 
-    /// Расширенное кеширование документа с аналитикой
+    /// Extended document caching with analytics
     async fn enhanced_cache_document(&mut self, doc: &Document) -> Result<()> {
         let env = match &self.env {
             Some(env) => env,
@@ -669,8 +735,8 @@ impl PersistentEnhancedRAG {
         };
 
         let url = doc.metadata.get("source_url").unwrap();
-        
-        // Создаем embedding если включен семантический поиск
+
+        // Create embedding if semantic search enabled
         let embedding = if self.cache_settings.enable_semantic_search {
             if let Some(ref embedding_model) = self.embedding_model {
                 Some(embedding_model.embed_query(&doc.page_content).await?)
@@ -681,7 +747,7 @@ impl PersistentEnhancedRAG {
             None
         };
 
-        // Создаем расширенный кешированный документ
+        // Create extended cached document
         let quality_metrics = CachedDocument::analyze_quality(&doc.page_content);
         let language = CachedDocument::detect_language(&doc.page_content);
         let topics = CachedDocument::extract_topics(&doc.page_content);
@@ -698,14 +764,15 @@ impl PersistentEnhancedRAG {
             topics,
         };
 
-        // Сохраняем документ
+        // Save document
         let document_cache = self.document_cache.as_ref().unwrap();
         let mut wtxn = env.write_txn()?;
         document_cache.put(&mut wtxn, url, &cached_doc)?;
 
-        // Создаем и сохраняем расширенные метаданные источника
+        // Create and save extended source metadata
         if let Some(source_metadata) = self.inner.sources_metadata().get(&(self.next_source_id)) {
-            let enhanced_metadata = EnhancedSourceMetadata::from_basic(source_metadata, &doc.page_content);
+            let enhanced_metadata =
+                EnhancedSourceMetadata::from_basic(source_metadata, &doc.page_content);
             let metadata_cache = self.metadata_cache.as_ref().unwrap();
             metadata_cache.put(&mut wtxn, &self.next_source_id, &enhanced_metadata)?;
             self.next_source_id += 1;
@@ -715,19 +782,19 @@ impl PersistentEnhancedRAG {
         Ok(())
     }
 
-    /// Расширенное кеширование запроса с семантическим анализом
+    /// Extended query caching with semantic analysis
     async fn enhanced_cache_query(
-        &self, 
-        query: &str, 
-        urls: &[String], 
-        user_context: Option<UserContext>
+        &self,
+        query: &str,
+        urls: &[String],
+        user_context: Option<UserContext>,
     ) -> Result<()> {
         let env = match &self.env {
             Some(env) => env,
             None => return Ok(()),
         };
 
-        // Создаем embedding для запроса
+        // Create embedding for query
         let embedding = if self.cache_settings.enable_semantic_search {
             if let Some(ref embedding_model) = self.embedding_model {
                 Some(embedding_model.embed_query(query).await?)
@@ -757,32 +824,32 @@ impl PersistentEnhancedRAG {
         Ok(())
     }
 
-    /// Интеллектуальное ранжирование документов
+    /// Intelligent document ranking
     async fn intelligent_ranking(
-        &self, 
-        documents: &[Document], 
-        query: &str, 
-        max_docs: usize
+        &self,
+        documents: &[Document],
+        query: &str,
+        max_docs: usize,
     ) -> Result<Vec<Document>> {
         if documents.is_empty() {
             return Ok(Vec::new());
         }
 
-        // Семантическое ранжирование если доступно
+        // Semantic ranking if available
         if self.cache_settings.enable_semantic_search && self.embedding_model.is_some() {
             return self.semantic_ranking(documents, query, max_docs).await;
         }
 
-        // Fallback на улучшенное текстовое ранжирование
+        // Fallback to enhanced text ranking
         Ok(self.enhanced_text_ranking(documents, query, max_docs))
     }
 
-    /// Семантическое ранжирование с использованием embeddings
+    /// Semantic ranking using embeddings
     async fn semantic_ranking(
         &self,
         documents: &[Document],
-        query: &str, 
-        max_docs: usize
+        query: &str,
+        max_docs: usize,
     ) -> Result<Vec<Document>> {
         let embedding_model = self.embedding_model.as_ref().unwrap();
         let query_embedding = embedding_model.embed_query(query).await?;
@@ -790,23 +857,27 @@ impl PersistentEnhancedRAG {
         let mut scored_docs = Vec::new();
 
         for doc in documents {
-            // Получаем embedding документа из кеша или создаем новый
-            let doc_embedding = if let Some(cached_doc) = self.get_cached_document(
-                doc.metadata.get("source_url").unwrap()
-            ).await? {
-                cached_doc.embedding.unwrap_or_else(|| vec![0.0; query_embedding.len()])
+            // Get document embedding from cache or create new
+            let doc_embedding = if let Some(cached_doc) = self
+                .get_cached_document(doc.metadata.get("source_url").unwrap())
+                .await?
+            {
+                cached_doc
+                    .embedding
+                    .unwrap_or_else(|| vec![0.0; query_embedding.len()])
             } else {
                 embedding_model.embed_query(&doc.page_content).await?
             };
 
             let semantic_score = cosine_similarity(&query_embedding, &doc_embedding);
-            
-            // Комбинируем семантическую оценку с качественными метриками
-            let quality_bonus = if let Some(cached_doc) = self.get_cached_document(
-                doc.metadata.get("source_url").unwrap()
-            ).await? {
-                cached_doc.quality_metrics.technical_depth * 0.2 +
-                cached_doc.quality_metrics.structure_score * 0.1
+
+            // Combine semantic score with quality metrics
+            let quality_bonus = if let Some(cached_doc) = self
+                .get_cached_document(doc.metadata.get("source_url").unwrap())
+                .await?
+            {
+                cached_doc.quality_metrics.technical_depth * 0.2
+                    + cached_doc.quality_metrics.structure_score * 0.1
             } else {
                 0.0
             };
@@ -815,60 +886,84 @@ impl PersistentEnhancedRAG {
             scored_docs.push((doc.clone(), final_score));
         }
 
-        // Сортируем и возвращаем топ документы
+        // Sort and return top documents
         scored_docs.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        Ok(scored_docs.into_iter().take(max_docs).map(|(doc, _)| doc).collect())
+        Ok(scored_docs
+            .into_iter()
+            .take(max_docs)
+            .map(|(doc, _)| doc)
+            .collect())
     }
 
-    /// Улучшенное текстовое ранжирование с учетом качества
-    fn enhanced_text_ranking(&self, documents: &[Document], query: &str, max_docs: usize) -> Vec<Document> {
+    /// Enhanced text ranking considering quality
+    fn enhanced_text_ranking(
+        &self,
+        documents: &[Document],
+        query: &str,
+        max_docs: usize,
+    ) -> Vec<Document> {
         let query_lower = query.to_lowercase();
         let query_words: Vec<&str> = query_lower.split_whitespace().collect();
-        
+
         let mut scored_docs: Vec<(Document, f32)> = documents
             .iter()
             .map(|doc| {
                 let content_lower = doc.page_content.to_lowercase();
-                let title_lower = doc.metadata.get("source_title")
+                let title_lower = doc
+                    .metadata
+                    .get("source_title")
                     .unwrap_or(&String::new())
                     .to_lowercase();
-                
+
                 let mut score = 0.0;
-                
-                // Базовое текстовое сходство
+
+                // Basic text similarity
                 for word in &query_words {
                     let content_matches = content_lower.matches(word).count() as f32;
                     score += content_matches * 1.0;
-                    
+
                     let title_matches = title_lower.matches(word).count() as f32;
                     score += title_matches * 3.0;
                 }
-                
-                // Нормализация по длине
+
+                // Normalize by length
                 score = score / (doc.page_content.len() as f32 + 1.0) * 1000.0;
-                
-                // Бонус за качество документа (если доступны метрики)
-                // В простом режиме даем небольшой бонус за длину и структуру
-                let length_bonus = if doc.page_content.len() > 1000 { 0.1 } else { 0.0 };
-                let structure_bonus = if doc.page_content.contains("```") || 
-                                        doc.page_content.matches('#').count() > 2 { 0.1 } else { 0.0 };
-                
+
+                // Bonus for document quality (if metrics available)
+                // In simple mode give small bonus for length and structure
+                let length_bonus = if doc.page_content.len() > 1000 {
+                    0.1
+                } else {
+                    0.0
+                };
+                let structure_bonus = if doc.page_content.contains("```")
+                    || doc.page_content.matches('#').count() > 2
+                {
+                    0.1
+                } else {
+                    0.0
+                };
+
                 score += length_bonus + structure_bonus;
-                
+
                 (doc.clone(), score)
             })
             .collect();
-        
+
         scored_docs.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        scored_docs.into_iter().take(max_docs).map(|(doc, _)| doc).collect()
+        scored_docs
+            .into_iter()
+            .take(max_docs)
+            .map(|(doc, _)| doc)
+            .collect()
     }
 
-    /// Создает улучшенный промпт с учетом AI аналитики
+    /// Creates enhanced prompt considering AI analytics
     async fn build_ai_enhanced_prompt(
-        &self, 
-        query: &str, 
-        context: &str, 
-        cached_docs: &[Document]
+        &self,
+        query: &str,
+        context: &str,
+        cached_docs: &[Document],
     ) -> Result<String> {
         let semantic_info = if self.cache_settings.enable_semantic_search {
             "\nNOTE: This response utilizes advanced semantic analysis and quality-filtered sources for enhanced accuracy and relevance.\n"
@@ -927,8 +1022,11 @@ impl PersistentEnhancedRAG {
         ))
     }
 
-    /// Получает метаданные источника по URL
-    async fn get_source_metadata_by_url(&self, url: &str) -> Result<Option<EnhancedSourceMetadata>> {
+    /// Gets source metadata by URL
+    async fn get_source_metadata_by_url(
+        &self,
+        url: &str,
+    ) -> Result<Option<EnhancedSourceMetadata>> {
         let env = match &self.env {
             Some(env) => env,
             None => return Ok(None),
@@ -937,7 +1035,7 @@ impl PersistentEnhancedRAG {
         let metadata_cache = self.metadata_cache.as_ref().unwrap();
         let rtxn = env.read_txn()?;
 
-        // Поиск по всем метаданным (неэффективно, но работает)
+        // Search in all metadata (inefficient but works)
         for entry in metadata_cache.iter(&rtxn)? {
             let (_, metadata) = entry?;
             if metadata.url == url {
@@ -948,7 +1046,7 @@ impl PersistentEnhancedRAG {
         Ok(None)
     }
 
-    /// Обновляет статистику использования источника
+    /// Updates source usage statistics
     pub async fn update_source_usage(&mut self, source_id: u32) -> Result<()> {
         let env = match &self.env {
             Some(env) => env,
@@ -967,7 +1065,7 @@ impl PersistentEnhancedRAG {
         Ok(())
     }
 
-    /// Получает статистику по качеству источников
+    /// Gets source quality statistics
     pub async fn get_quality_stats(&self) -> Result<QualityStats> {
         let env = match &self.env {
             Some(env) => env,
@@ -982,7 +1080,7 @@ impl PersistentEnhancedRAG {
         for entry in metadata_cache.iter(&rtxn)? {
             let (_, metadata) = entry?;
             stats.total_sources += 1;
-            
+
             match metadata.reliability_rating {
                 ReliabilityRating::VeryHigh => stats.very_high_quality += 1,
                 ReliabilityRating::High => stats.high_quality += 1,
@@ -1001,34 +1099,39 @@ impl PersistentEnhancedRAG {
         Ok(stats)
     }
 
-    /// Векторный поиск по документам (заготовка для будущих версий)
-    /// Требует дополнительной интеграции с arroy для полнофункционального поиска
+    /// Vector document search (placeholder for future versions)
+    /// Requires additional integration with arroy for full-functional search
     #[allow(dead_code)]
-    pub async fn vector_similarity_search(&self, query_embedding: &[f32], k: usize) -> Result<Vec<Document>> {
-        // TODO: Полная реализация векторного поиска с arroy
-        // Текущая версия использует семантический поиск через embeddings в документах
-        // Для production использования требуется:
-        // 1. Создание arroy индекса из всех document embeddings
-        // 2. Поиск k ближайших соседей для query_embedding
-        // 3. Извлечение соответствующих документов из кеша
-        // 4. Возврат отсортированного списка документов
-        
-        // Временная заглушка - возвращает пустой список
-        let _ = (query_embedding, k); // убираем warnings о неиспользуемых параметрах
+    pub async fn vector_similarity_search(
+        &self,
+        query_embedding: &[f32],
+        k: usize,
+    ) -> Result<Vec<Document>> {
+        // TODO: Full implementation of vector search with arroy
+        // Current version uses semantic search via embeddings in documents
+        // For production usage required:
+        // 1. Creation of arroy index from all document embeddings
+        // 2. Search k nearest neighbors for query_embedding
+        // 3. Extraction of corresponding documents from cache
+        // 4. Return sorted list of documents
+
+        // Temporary stub - returns empty list
+        let _ = (query_embedding, k); // remove warnings about unused parameters
         Ok(Vec::new())
     }
 
-    // Наследуем остальные методы с обновленными сигнатурами
+    // Inherit other methods with updated signatures
     pub async fn generate_article_with_cache(
         &mut self,
         query: &str,
         max_retrieved_docs: usize,
     ) -> Result<String> {
-        // Используем расширенную версию без пользовательского контекста
-        self.generate_article_with_enhanced_cache(query, max_retrieved_docs, None).await
+        // Use extended version without user context
+        self.generate_article_with_enhanced_cache(query, max_retrieved_docs, None)
+            .await
     }
 
-    // Остальные базовые методы остаются теми же...
+    // Other base methods remain the same...
     async fn find_similar_queries(&self, query: &str) -> Result<Vec<CachedQuery>> {
         let env = match &self.env {
             Some(env) => env,
@@ -1037,7 +1140,7 @@ impl PersistentEnhancedRAG {
 
         let query_cache = self.query_cache.as_ref().unwrap();
         let rtxn = env.read_txn()?;
-        
+
         let mut similar_queries = Vec::new();
         let query_lower = query.to_lowercase();
         let query_words: Vec<&str> = query_lower.split_whitespace().collect();
@@ -1047,7 +1150,7 @@ impl PersistentEnhancedRAG {
             let cached_lower = cached_query.query.to_lowercase();
             let cached_words: Vec<&str> = cached_lower.split_whitespace().collect();
             let similarity = self.calculate_word_similarity(&query_words, &cached_words);
-            
+
             if similarity >= self.cache_settings.min_query_similarity {
                 similar_queries.push(cached_query);
                 if similar_queries.len() >= 3 {
@@ -1082,7 +1185,7 @@ impl PersistentEnhancedRAG {
 
         let document_cache = self.document_cache.as_ref().unwrap();
         let rtxn = env.read_txn()?;
-        
+
         Ok(document_cache.get(&rtxn, url)?)
     }
 
@@ -1107,7 +1210,7 @@ impl PersistentEnhancedRAG {
         };
 
         let rtxn = env.read_txn()?;
-        
+
         let doc_count = self.document_cache.as_ref().unwrap().len(&rtxn)? as usize;
         let query_count = self.query_cache.as_ref().unwrap().len(&rtxn)? as usize;
 
@@ -1140,7 +1243,7 @@ impl PersistentEnhancedRAG {
         let mut deleted_docs = 0;
         let mut deleted_queries = 0;
 
-        // Удаляем устаревшие документы
+        // Remove outdated documents
         let documents_to_delete: Vec<String> = {
             let mut docs = Vec::new();
             for entry in self.document_cache.as_ref().unwrap().iter(&wtxn)? {
@@ -1153,11 +1256,14 @@ impl PersistentEnhancedRAG {
         };
 
         for url in documents_to_delete {
-            self.document_cache.as_ref().unwrap().delete(&mut wtxn, &url)?;
+            self.document_cache
+                .as_ref()
+                .unwrap()
+                .delete(&mut wtxn, &url)?;
             deleted_docs += 1;
         }
 
-        // Удаляем устаревшие запросы (ИСПРАВЛЕНО: используем wtxn вместо rtxn)
+        // Remove outdated queries (FIXED: use wtxn instead of rtxn)
         let queries_to_delete: Vec<String> = {
             let mut queries = Vec::new();
             for entry in self.query_cache.as_ref().unwrap().iter(&wtxn)? {
@@ -1171,14 +1277,19 @@ impl PersistentEnhancedRAG {
         };
 
         for hash in queries_to_delete {
-            self.query_cache.as_ref().unwrap().delete(&mut wtxn, &hash)?;
+            self.query_cache
+                .as_ref()
+                .unwrap()
+                .delete(&mut wtxn, &hash)?;
             deleted_queries += 1;
         }
 
         wtxn.commit()?;
 
-        info!("Расширенная очистка кеша завершена: удалено {} документов и {} запросов", 
-              deleted_docs, deleted_queries);
+        info!(
+            "Extended cache cleanup completed: deleted {} documents and {} queries",
+            deleted_docs, deleted_queries
+        );
 
         Ok(CleanupStats {
             deleted_documents: deleted_docs,
@@ -1210,4 +1321,554 @@ pub struct QualityStats {
     pub low_quality: usize,
     pub very_low_quality: usize,
     pub average_quality_score: f32,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    // Test CachedDocument
+    #[test]
+    fn test_cached_document_is_fresh() {
+        let doc = CachedDocument {
+            url: "https://test.com".to_string(),
+            content_hash: "hash123".to_string(),
+            page_content: "content".to_string(),
+            metadata: HashMap::new(),
+            processed_at: Utc::now(),
+            embedding: None,
+            quality_metrics: DocumentQualityMetrics {
+                content_length: 100,
+                structure_score: 0.5,
+                readability_score: 0.5,
+                technical_depth: 0.5,
+            },
+            language: "en".to_string(),
+            topics: vec![],
+        };
+
+        assert!(doc.is_fresh(7));
+        assert!(doc.is_fresh(1));
+        assert!(!doc.is_fresh(0));
+    }
+
+    #[test]
+    fn test_cached_document_is_not_fresh() {
+        let old_date = Utc::now() - chrono::Duration::days(10);
+        let doc = CachedDocument {
+            url: "https://test.com".to_string(),
+            content_hash: "hash123".to_string(),
+            page_content: "content".to_string(),
+            metadata: HashMap::new(),
+            processed_at: old_date,
+            embedding: None,
+            quality_metrics: DocumentQualityMetrics {
+                content_length: 100,
+                structure_score: 0.5,
+                readability_score: 0.5,
+                technical_depth: 0.5,
+            },
+            language: "en".to_string(),
+            topics: vec![],
+        };
+
+        assert!(!doc.is_fresh(7));
+        assert!(doc.is_fresh(14));
+    }
+
+    #[test]
+    fn test_content_hash_generation() {
+        let content1 = "test content";
+        let content2 = "test content";
+        let content3 = "different content";
+
+        let hash1 = CachedDocument::content_hash(content1);
+        let hash2 = CachedDocument::content_hash(content2);
+        let hash3 = CachedDocument::content_hash(content3);
+
+        assert_eq!(hash1, hash2);
+        assert_ne!(hash1, hash3);
+    }
+
+    #[test]
+    fn test_analyze_quality_metrics() {
+        let content = "# Header 1\n\n## Header 2\n\n- List item 1\n- List item 2\n\n```rust\ncode example\n```\n\nSome text with function and implementation keywords.";
+        let metrics = CachedDocument::analyze_quality(content);
+
+        assert!(metrics.structure_score > 0.0);
+        assert!(metrics.readability_score >= 0.0 && metrics.readability_score <= 1.0);
+        assert!(metrics.technical_depth > 0.0);
+        assert_eq!(metrics.content_length, content.len());
+    }
+
+    #[test]
+    fn test_analyze_quality_short_content() {
+        let content = "Short";
+        let metrics = CachedDocument::analyze_quality(content);
+
+        assert_eq!(metrics.content_length, 5);
+        assert!(metrics.structure_score >= 0.0);
+    }
+
+    #[test]
+    fn test_detect_language_english() {
+        let content = "This is English content with many words";
+        let lang = CachedDocument::detect_language(content);
+        assert_eq!(lang, "en");
+    }
+
+    #[test]
+    fn test_detect_language_russian() {
+        let content = "Это русский текст с большим количеством слов";
+        let lang = CachedDocument::detect_language(content);
+        assert_eq!(lang, "ru");
+    }
+
+    #[test]
+    fn test_extract_topics_from_headers() {
+        let content = "# Topic One\n\nContent\n\n## Topic Two\n\nMore content\n\n### Topic Three";
+        let topics = CachedDocument::extract_topics(content);
+
+        assert!(topics.len() >= 2);
+        assert!(topics.contains(&"Topic One".to_string()));
+        assert!(topics.contains(&"Topic Two".to_string()));
+    }
+
+    #[test]
+    fn test_extract_topics_empty_content() {
+        let content = "No headers here";
+        let topics = CachedDocument::extract_topics(content);
+        assert_eq!(topics.len(), 0);
+    }
+
+    #[test]
+    fn test_extract_topics_truncates_to_10() {
+        let mut content = String::new();
+        for i in 0..20 {
+            content.push_str(&format!("# Topic {}\n\n", i));
+        }
+        let topics = CachedDocument::extract_topics(&content);
+        assert_eq!(topics.len(), 10);
+    }
+
+    // Test EnhancedSourceMetadata
+    #[test]
+    fn test_enhanced_source_metadata_from_basic() {
+        let basic = SourceMetadata {
+            url: "https://github.com/test".to_string(),
+            title: "Test Repo".to_string(),
+            snippet: "snippet".to_string(),
+            domain: "github.com".to_string(),
+            content_summary: "summary".to_string(),
+            topics_covered: vec!["rust".to_string()],
+        };
+
+        let content = "# Test\nSome code example with function and class";
+        let enhanced = EnhancedSourceMetadata::from_basic(&basic, content);
+
+        assert_eq!(enhanced.url, basic.url);
+        assert_eq!(enhanced.title, basic.title);
+        assert!(enhanced.quality_score > 0.0);
+        assert_eq!(enhanced.language, "en");
+        assert!(matches!(
+            enhanced.reliability_rating,
+            ReliabilityRating::VeryHigh
+        ));
+    }
+
+    #[test]
+    fn test_calculate_quality_score_trusted_domain() {
+        let score = EnhancedSourceMetadata::calculate_quality_score(
+            "arxiv.org",
+            "# Header\nContent with algorithm and performance",
+        );
+        assert!(score > 0.5);
+    }
+
+    #[test]
+    fn test_calculate_quality_score_unknown_domain() {
+        let score = EnhancedSourceMetadata::calculate_quality_score("unknown.com", "Short");
+        assert!(score > 0.0);
+        assert!(score <= 1.0);
+    }
+
+    #[test]
+    fn test_determine_reliability_academic() {
+        let rating = EnhancedSourceMetadata::determine_reliability("arxiv.org", 0.8);
+        assert_eq!(rating, ReliabilityRating::VeryHigh);
+    }
+
+    #[test]
+    fn test_determine_reliability_by_score() {
+        assert_eq!(
+            EnhancedSourceMetadata::determine_reliability("example.com", 0.75),
+            ReliabilityRating::High
+        );
+        assert_eq!(
+            EnhancedSourceMetadata::determine_reliability("example.com", 0.55),
+            ReliabilityRating::Medium
+        );
+        assert_eq!(
+            EnhancedSourceMetadata::determine_reliability("example.com", 0.35),
+            ReliabilityRating::Low
+        );
+        assert_eq!(
+            EnhancedSourceMetadata::determine_reliability("example.com", 0.15),
+            ReliabilityRating::VeryLow
+        );
+    }
+
+    #[test]
+    fn test_classify_source_type() {
+        assert!(matches!(
+            EnhancedSourceMetadata::classify_source_type("https://arxiv.org/paper", "content"),
+            SourceType::Academic
+        ));
+        assert!(matches!(
+            EnhancedSourceMetadata::classify_source_type("https://docs.example.com", "content"),
+            SourceType::Documentation
+        ));
+        assert!(matches!(
+            EnhancedSourceMetadata::classify_source_type(
+                "https://blog.example.com",
+                "content"
+            ),
+            SourceType::Blog
+        ));
+        assert!(matches!(
+            EnhancedSourceMetadata::classify_source_type(
+                "https://stackoverflow.com/q/123",
+                "content"
+            ),
+            SourceType::Forum
+        ));
+        assert!(matches!(
+            EnhancedSourceMetadata::classify_source_type(
+                "https://example.com",
+                "This is a tutorial"
+            ),
+            SourceType::Tutorial
+        ));
+    }
+
+    #[test]
+    fn test_increment_usage() {
+        let basic = SourceMetadata {
+            url: "test".to_string(),
+            title: "test".to_string(),
+            snippet: "test".to_string(),
+            domain: "test".to_string(),
+            content_summary: "test".to_string(),
+            topics_covered: vec![],
+        };
+
+        let mut enhanced = EnhancedSourceMetadata::from_basic(&basic, "content");
+        let initial_score = enhanced.quality_score;
+
+        enhanced.increment_usage();
+        assert_eq!(enhanced.usage_count, 1);
+
+        // Increment 9 more times to trigger quality increase at 10
+        for _ in 0..9 {
+            enhanced.increment_usage();
+        }
+        assert_eq!(enhanced.usage_count, 10);
+        assert!(enhanced.quality_score >= initial_score);
+    }
+
+    // Test CachedQuery
+    #[test]
+    fn test_query_hash_generation() {
+        let query1 = "test query";
+        let query2 = "test query";
+        let query3 = "different query";
+
+        let hash1 = CachedQuery::query_hash(query1);
+        let hash2 = CachedQuery::query_hash(query2);
+        let hash3 = CachedQuery::query_hash(query3);
+
+        assert_eq!(hash1, hash2);
+        assert_ne!(hash1, hash3);
+    }
+
+    #[test]
+    fn test_query_hash_case_insensitive() {
+        let hash1 = CachedQuery::query_hash("Test Query");
+        let hash2 = CachedQuery::query_hash("test query");
+        assert_eq!(hash1, hash2);
+    }
+
+    #[test]
+    fn test_analyze_query_type() {
+        assert!(matches!(
+            CachedQuery::analyze_query_type("how to use rust"),
+            QueryType::Tutorial
+        ));
+        assert!(matches!(
+            CachedQuery::analyze_query_type("rust vs python"),
+            QueryType::Comparison
+        ));
+        assert!(matches!(
+            CachedQuery::analyze_query_type("rust reference documentation"),
+            QueryType::Reference
+        ));
+        assert!(matches!(
+            CachedQuery::analyze_query_type("fix rust error"),
+            QueryType::Troubleshooting
+        ));
+        assert!(matches!(
+            CachedQuery::analyze_query_type("rust best practices"),
+            QueryType::BestPractices
+        ));
+        assert!(matches!(
+            CachedQuery::analyze_query_type("implement rust feature"),
+            QueryType::Implementation
+        ));
+        assert!(matches!(
+            CachedQuery::analyze_query_type("rust ownership"),
+            QueryType::Concept
+        ));
+    }
+
+    #[test]
+    fn test_extract_semantic_topics() {
+        let query = "async rust web api performance";
+        let topics = CachedQuery::extract_semantic_topics(query);
+
+        assert!(topics.contains(&"async".to_string()));
+        assert!(topics.contains(&"rust".to_string()));
+        assert!(topics.contains(&"web".to_string()));
+        assert!(topics.contains(&"api".to_string()));
+        assert!(topics.contains(&"performance".to_string()));
+    }
+
+    #[test]
+    fn test_extract_semantic_topics_empty() {
+        let query = "something unrelated";
+        let topics = CachedQuery::extract_semantic_topics(query);
+        assert_eq!(topics.len(), 0);
+    }
+
+    #[test]
+    fn test_semantic_similarity_with_embeddings() {
+        let query1 = CachedQuery {
+            query: "test1".to_string(),
+            query_hash: "hash1".to_string(),
+            related_urls: vec![],
+            processed_at: Utc::now(),
+            embedding: Some(vec![1.0, 0.0, 0.0]),
+            query_type: QueryType::Concept,
+            semantic_topics: vec![],
+            user_context: None,
+        };
+
+        let query2 = CachedQuery {
+            query: "test2".to_string(),
+            query_hash: "hash2".to_string(),
+            related_urls: vec![],
+            processed_at: Utc::now(),
+            embedding: Some(vec![1.0, 0.0, 0.0]),
+            query_type: QueryType::Concept,
+            semantic_topics: vec![],
+            user_context: None,
+        };
+
+        let similarity = query1.semantic_similarity(&query2);
+        assert!((similarity - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_semantic_similarity_without_embeddings() {
+        let query1 = CachedQuery {
+            query: "test1".to_string(),
+            query_hash: "hash1".to_string(),
+            related_urls: vec![],
+            processed_at: Utc::now(),
+            embedding: None,
+            query_type: QueryType::Concept,
+            semantic_topics: vec!["rust".to_string(), "async".to_string()],
+            user_context: None,
+        };
+
+        let query2 = CachedQuery {
+            query: "test2".to_string(),
+            query_hash: "hash2".to_string(),
+            related_urls: vec![],
+            processed_at: Utc::now(),
+            embedding: None,
+            query_type: QueryType::Concept,
+            semantic_topics: vec!["rust".to_string(), "web".to_string()],
+            user_context: None,
+        };
+
+        let similarity = query1.semantic_similarity(&query2);
+        assert!(similarity > 0.0);
+        assert!(similarity < 1.0);
+    }
+
+    // Test CacheSettings
+    #[test]
+    fn test_cache_settings_default() {
+        let settings = CacheSettings::default();
+        assert_eq!(settings.max_document_age_days, 7);
+        assert_eq!(settings.min_query_similarity, 0.7);
+        assert_eq!(settings.max_cached_docs, 10);
+        assert!(settings.enable_semantic_search);
+        assert_eq!(settings.min_quality_score, 0.3);
+        assert!(!settings.enable_personalization);
+        assert_eq!(settings.max_concurrent_downloads, 8);
+    }
+
+    // Test PersistentEnhancedRAG
+    #[tokio::test]
+    async fn test_persistent_rag_in_memory_creation() {
+        let rag = PersistentEnhancedRAG::new_in_memory(
+            "http://localhost:8080".to_string(),
+            "test-model".to_string(),
+            "test-embed".to_string(),
+            Some("http://localhost:11434".to_string()),
+        );
+
+        assert!(rag.is_ok());
+        let rag = rag.unwrap();
+        assert!(rag.env.is_none());
+        assert!(rag.document_cache.is_none());
+        assert!(rag.query_cache.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_persistent_rag_with_storage_creation() {
+        let temp_dir = tempdir().unwrap();
+        let db_path = temp_dir.path().join("test.db");
+
+        let rag = PersistentEnhancedRAG::new_with_persistent_storage(
+            &db_path,
+            "http://localhost:8080".to_string(),
+            "test-model".to_string(),
+            "test-embed".to_string(),
+            Some("http://localhost:11434".to_string()),
+            None,
+        );
+
+        assert!(rag.is_ok());
+        let rag = rag.unwrap();
+        assert!(rag.env.is_some());
+        assert!(rag.document_cache.is_some());
+        assert!(rag.query_cache.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_cache_stats_in_memory() {
+        let rag = PersistentEnhancedRAG::new_in_memory(
+            "http://localhost:8080".to_string(),
+            "test-model".to_string(),
+            "test-embed".to_string(),
+            None,
+        )
+        .unwrap();
+
+        let stats = rag.cache_stats().await.unwrap();
+        assert_eq!(stats.total_documents, 0);
+        assert_eq!(stats.total_queries, 0);
+        assert_eq!(stats.fresh_documents, 0);
+        assert_eq!(stats.database_size_mb, 0.0);
+    }
+
+    #[tokio::test]
+    async fn test_cache_stats_with_storage() {
+        let temp_dir = tempdir().unwrap();
+        let db_path = temp_dir.path().join("test.db");
+
+        let rag = PersistentEnhancedRAG::new_with_persistent_storage(
+            &db_path,
+            "http://localhost:8080".to_string(),
+            "test-model".to_string(),
+            "test-embed".to_string(),
+            None,
+            None,
+        )
+        .unwrap();
+
+        let stats = rag.cache_stats().await.unwrap();
+        assert_eq!(stats.total_documents, 0);
+        assert_eq!(stats.total_queries, 0);
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_cache_in_memory() {
+        let mut rag = PersistentEnhancedRAG::new_in_memory(
+            "http://localhost:8080".to_string(),
+            "test-model".to_string(),
+            "test-embed".to_string(),
+            None,
+        )
+        .unwrap();
+
+        let stats = rag.cleanup_cache().await.unwrap();
+        assert_eq!(stats.deleted_documents, 0);
+        assert_eq!(stats.deleted_queries, 0);
+    }
+
+    #[tokio::test]
+    async fn test_get_quality_stats_in_memory() {
+        let rag = PersistentEnhancedRAG::new_in_memory(
+            "http://localhost:8080".to_string(),
+            "test-model".to_string(),
+            "test-embed".to_string(),
+            None,
+        )
+        .unwrap();
+
+        let stats = rag.get_quality_stats().await.unwrap();
+        assert_eq!(stats.total_sources, 0);
+        assert_eq!(stats.average_quality_score, 0.0);
+    }
+
+    // Test Stats structures
+    #[test]
+    fn test_cleanup_stats_default() {
+        let stats = CleanupStats::default();
+        assert_eq!(stats.deleted_documents, 0);
+        assert_eq!(stats.deleted_queries, 0);
+    }
+
+    #[test]
+    fn test_quality_stats_default() {
+        let stats = QualityStats::default();
+        assert_eq!(stats.total_sources, 0);
+        assert_eq!(stats.very_high_quality, 0);
+        assert_eq!(stats.high_quality, 0);
+        assert_eq!(stats.medium_quality, 0);
+        assert_eq!(stats.low_quality, 0);
+        assert_eq!(stats.very_low_quality, 0);
+        assert_eq!(stats.average_quality_score, 0.0);
+    }
+
+    // Test ReliabilityRating comparisons
+    #[test]
+    fn test_reliability_rating_ordering() {
+        assert!(ReliabilityRating::VeryHigh > ReliabilityRating::High);
+        assert!(ReliabilityRating::High > ReliabilityRating::Medium);
+        assert!(ReliabilityRating::Medium > ReliabilityRating::Low);
+        assert!(ReliabilityRating::Low > ReliabilityRating::VeryLow);
+    }
+
+    // Test ExpertiseLevel
+    #[test]
+    fn test_expertise_level_serialization() {
+        let level = ExpertiseLevel::Advanced;
+        let serialized = serde_json::to_string(&level).unwrap();
+        let deserialized: ExpertiseLevel = serde_json::from_str(&serialized).unwrap();
+        assert!(matches!(deserialized, ExpertiseLevel::Advanced));
+    }
+
+    // Test SourceType
+    #[test]
+    fn test_source_type_serialization() {
+        let source_type = SourceType::Academic;
+        let serialized = serde_json::to_string(&source_type).unwrap();
+        let deserialized: SourceType = serde_json::from_str(&serialized).unwrap();
+        assert!(matches!(deserialized, SourceType::Academic));
+    }
 }
