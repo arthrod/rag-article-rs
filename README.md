@@ -1,82 +1,82 @@
 # Enhanced RAG Article Generator v2.0 (Rust)
 
-Высокопроизводительный **AI-enhanced** генератор статей с интеллектуальным кешированием, параллельной обработкой и семантическим анализом, написанный на Rust. Революционное обновление с 5-8x ускорением загрузки и расширенными возможностями искусственного интеллекта.
+High-performance **AI-enhanced** article generator with intelligent caching, parallel processing, and semantic analysis, written in Rust. A revolutionary update with 5-8x download speedup and extended artificial intelligence capabilities.
 
-## 🚀 Новые возможности v2.0
+## 🚀 New Features v2.0
 
-- 🤖 **AI-Enhanced кеширование** с интеллектуальным анализом качества источников
-- ⚡ **Параллельная загрузка документов** - ускорение в 5-8 раз  
-- 🧠 **Семантический поиск** с векторными embeddings через Ollama
-- 🎯 **Персонализация** по уровню экспертизы пользователя
-- 🔄 **Робастная обработка ошибок** с автоматическими retry и fallback
-- 📊 **Расширенная аналитика** источников и производительности
-- 🛡️ **Умная валидация** окружения с автоустановкой моделей
-- 💾 **Персистентное хранилище** LMDB для долгосрочного кеширования
+- 🤖 **AI-Enhanced Caching** with intelligent source quality analysis
+- ⚡ **Parallel Document Download** - 5-8x acceleration
+- 🧠 **Semantic Search** with vector embeddings via Ollama
+- 🎯 **Personalization** based on user expertise level
+- 🔄 **Robust Error Handling** with automatic retry and fallback
+- 📊 **Extended Analytics** of sources and performance
+- 🛡️ **Smart Environment Validation** with model auto-installation
+- 💾 **Persistent Storage** LMDB for long-term caching
 
-## Особенности
+## Features
 
-- 🔍 **Интеллектуальный поиск источников** через SearXNG с фильтрацией по качеству
-- 📝 **Конвертация HTML в Markdown** для эффективной токенизации
-- 🧠 **Продвинутый векторный поиск** с семантическим ранжированием
-- 📚 **Академически правильные сноски** и цитирование
-- 🚀 **Сверхвысокая производительность** с параллельной обработкой
-- 🔧 **Полная интеграция с Ollama** для локальных LLM
-- 📊 **AI-аналитика источников** с автоматической классификацией
-- 💡 **Самообучающаяся система** с адаптивным качеством
+- 🔍 **Intelligent Source Search** via SearXNG with quality filtering
+- 📝 **HTML to Markdown Conversion** for efficient tokenization
+- 🧠 **Advanced Vector Search** with semantic ranking
+- 📚 **Academically Correct Footnotes** and citations
+- 🚀 **Ultra-High Performance** with parallel processing
+- 🔧 **Full Ollama Integration** for local LLMs
+- 📊 **AI Source Analytics** with automatic classification
+- 💡 **Self-Learning System** with adaptive quality
 
-## Установка
+## Installation
 
-### Предварительные требования
+### Prerequisites
 
-1. **Rust** (версия 1.70+):
+1. **Rust** (version 1.70+):
 ```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source $HOME/.cargo/env
 ```
 
-2. **Ollama** с необходимыми моделями:
+2. **Ollama** with necessary models:
 ```bash
-# Установка Ollama
+# Install Ollama
 curl -fsSL https://ollama.ai/install.sh | sh
 
-# Загрузка моделей (поддерживается автоустановка)
-ollama pull qwen2.5:32b              # Основная LLM модель
-ollama pull llama3.2:3b             # Легковесная fallback модель  
-ollama pull nomic-embed-text:latest # Модель для embeddings
+# Download models (auto-installation supported)
+ollama pull qwen2.5:32b              # Main LLM model
+ollama pull llama3.2:3b             # Lightweight fallback model
+ollama pull nomic-embed-text:latest # Model for embeddings
 ```
 
-3. **SearXNG** сервер:
+3. **SearXNG** server:
 ```bash
 docker run -d -p 8080:8080 searxng/searxng
 ```
 
-### Сборка проекта
+### Build Project
 
 ```bash
-# Клонирование репозитория
+# Clone repository
 git clone <repository-url>
 cd enhanced-rag-article-generator
 
-# Сборка в релизном режиме
+# Build in release mode
 cargo build --release
 
-# Запуск тестов
+# Run tests
 cargo test
 ```
 
-## Использование
+## Usage
 
-### Простой запуск с автоматической настройкой
+### Simple Run with Auto-Configuration
 
 ```bash
-# Генерация с автоматической проверкой и установкой зависимостей
+# Generate with automatic validation and dependency installation
 ./target/release/enhanced-rag-generator \
   --validate-env \
   --auto-install \
   "Write a comprehensive article about advanced Rust programming patterns and performance optimization"
 ```
 
-### AI-Enhanced режим с персистентным кешированием
+### AI-Enhanced Mode with Persistent Caching
 
 ```bash
 ./target/release/enhanced-rag-generator \
@@ -90,150 +90,150 @@ cargo test
   "Advanced machine learning applications in Rust ecosystem"
 ```
 
-### Управление кешем и аналитика
+### Cache Management and Analytics
 
 ```bash
-# Просмотр статистики кеша
+# View cache statistics
 ./target/release/enhanced-rag-generator \
   --database "./cache" \
   --show-cache-stats \
   --show-quality-stats \
   "dummy query"
 
-# Очистка устаревших данных
+# Clean up outdated data
 ./target/release/enhanced-rag-generator \
   --database "./cache" \
   --cleanup-cache \
   "dummy query"
 ```
 
-### Параметры командной строки
+### Command Line Arguments
 
-#### Основные параметры:
-- `--searx-host`: Адрес SearXNG сервера (по умолчанию: http://127.0.0.1:8080)
-- `--ollama-host`: Адрес Ollama сервера (по умолчанию: http://localhost:11434)
-- `--model`, `-m`: Модель Ollama для генерации (по умолчанию: qwen2.5:32b)
-- `--embedding-model`: Модель для embeddings (по умолчанию: nomic-embed-text:latest)
-- `--max-docs`: Количество документов для анализа (по умолчанию: 15)
-- `--output`, `-o`: Файл результата (по умолчанию: enhanced_article.md)
+#### Basic Arguments:
+- `--searx-host`: SearXNG server address (default: http://127.0.0.1:8080)
+- `--ollama-host`: Ollama server address (default: http://localhost:11434)
+- `--model`, `-m`: Ollama model for generation (default: qwen2.5:32b)
+- `--embedding-model`: Model for embeddings (default: nomic-embed-text:latest)
+- `--max-docs`: Number of documents to analyze (default: 15)
+- `--output`, `-o`: Output file (default: enhanced_article.md)
 
-#### AI-Enhanced параметры:
-- `--database`, `-d`: Путь к базе данных для кеширования
-- `--enable-semantic`: Включить семантический поиск с embeddings
-- `--enable-personalization`: Включить персонализацию по экспертизе
-- `--expertise-level`: Уровень экспертизы (beginner/intermediate/advanced/expert)
-- `--concurrent-downloads`: Количество параллельных загрузок (по умолчанию: 8)
-- `--quality-threshold`: Минимальный порог качества источников (0.0-1.0)
-- `--similarity-threshold`: Порог семантического сходства (0.0-1.0)
-- `--cache-days`: Срок жизни кеша в днях (по умолчанию: 7)
+#### AI-Enhanced Arguments:
+- `--database`, `-d`: Path to database for caching
+- `--enable-semantic`: Enable semantic search with embeddings
+- `--enable-personalization`: Enable personalization by expertise
+- `--expertise-level`: Expertise level (beginner/intermediate/advanced/expert)
+- `--concurrent-downloads`: Number of concurrent downloads (default: 8)
+- `--quality-threshold`: Minimum source quality threshold (0.0-1.0)
+- `--similarity-threshold`: Semantic similarity threshold (0.0-1.0)
+- `--cache-days`: Cache lifetime in days (default: 7)
 
-#### Системные параметры:
-- `--validate-env`: Проверить доступность всех зависимостей
-- `--auto-install`: Автоматически установить недостающие модели
-- `--show-cache-stats`: Показать статистику кеша
-- `--show-quality-stats`: Показать аналитику качества источников
-- `--cleanup-cache`: Очистить устаревшие данные кеша
+#### System Arguments:
+- `--validate-env`: Check availability of all dependencies
+- `--auto-install`: Automatically install missing models
+- `--show-cache-stats`: Show cache statistics
+- `--show-quality-stats`: Show source quality analytics
+- `--cleanup-cache`: Clean outdated cache data
 
-## Архитектура v2.0
+## Architecture v2.0
 
-### Расширенные компоненты
+### Enhanced Components
 
-1. **PersistentEnhancedRAG**: AI-enhanced генератор с персистентным кешированием
-2. **OllamaErrorHandling**: Робастная система обработки ошибок Ollama API
-3. **ParallelDownloader**: Система параллельной загрузки с контролем concurrency
-4. **CacheSettings**: Настройки интеллектуального кеширования
-5. **EnhancedSourceMetadata**: Расширенные метаданные с AI-аналитикой
-6. **SemanticQuerySearch**: Семантический поиск запросов через embeddings
+1. **PersistentEnhancedRAG**: AI-enhanced generator with persistent caching
+2. **OllamaErrorHandling**: Robust Ollama API error handling system
+3. **ParallelDownloader**: Parallel download system with concurrency control
+4. **CacheSettings**: Intelligent caching settings
+5. **EnhancedSourceMetadata**: Extended metadata with AI analytics
+6. **SemanticQuerySearch**: Semantic query search via embeddings
 
-### Новые структуры данных
+### New Data Structures
 
 ```rust
-// AI-enhanced метаданные источников
+// AI-enhanced source metadata
 pub struct EnhancedSourceMetadata {
     pub url: String,
     pub quality_score: f32,
-    pub reliability_rating: ReliabilityRating, 
+    pub reliability_rating: ReliabilityRating,
     pub content_type: SourceType,
     pub usage_count: u32,
     pub embedding: Option<Vec<f32>>,
-    // ... и многое другое
+    // ... and much more
 }
 
-// Кешированный документ с аналитикой
+// Cached document with analytics
 pub struct CachedDocument {
     pub quality_metrics: DocumentQualityMetrics,
     pub language: String,
     pub topics: Vec<String>,
     pub embedding: Option<Vec<f32>>,
-    // ... полная аналитика контента
+    // ... full content analytics
 }
 
-// Персонализация пользователя
+// User personalization
 pub struct UserContext {
     pub expertise_level: ExpertiseLevel,
     pub preferred_languages: Vec<String>,
     pub frequent_topics: Vec<String>,
-    // ... контекст для персонализации
+    // ... personalization context
 }
 ```
 
-### Процесс генерации статьи v2.0
+### Article Generation Process v2.0
 
-1. **🔍 Валидация окружения**: Автоматическая проверка и установка зависимостей
-2. **🧠 Семантический анализ запроса**: Извлечение тем и классификация типа запроса
-3. **💾 Интеллектуальный поиск в кеше**: Семантический поиск похожих запросов
-4. **⚡ Параллельный поиск источников**: Многопоточная загрузка с контролем качества
-5. **🤖 AI-фильтрация**: Автоматическая оценка качества и надежности источников
-6. **📊 Векторизация и ранжирование**: Семантическое ранжирование по релевантности
-7. **✨ AI-enhanced генерация**: Создание статьи с учетом персонализации
-8. **💾 Интеллектуальное кеширование**: Сохранение результатов с метаданными
+1. **🔍 Environment Validation**: Automatic check and dependency installation
+2. **🧠 Semantic Query Analysis**: Topic extraction and query type classification
+3. **💾 Intelligent Cache Search**: Semantic search for similar queries
+4. **⚡ Parallel Source Search**: Multi-threaded download with quality control
+5. **🤖 AI Filtering**: Automatic quality and reliability assessment of sources
+6. **📊 Vectorization and Ranking**: Semantic ranking by relevance
+7. **✨ AI-Enhanced Generation**: Article creation considering personalization
+8. **💾 Intelligent Caching**: Saving results with metadata
 
-## Производительность v2.0
+## Performance v2.0
 
-### Революционные улучшения
+### Revolutionary Improvements
 
-- **Загрузка документов**: от 30 секунд до 4-6 секунд (5-8x ускорение)
-- **Использование памяти**: оптимизация на 40-60% благодаря эффективному кешированию  
-- **Качество результатов**: повышение на 25-35% благодаря AI-фильтрации источников
-- **Время запуска**: от минут до секунд при использовании кеша
-- **Масштабируемость**: поддержка тысяч запросов с персистентным кешем
+- **Document Download**: from 30 seconds to 4-6 seconds (5-8x acceleration)
+- **Memory Usage**: optimization by 40-60% thanks to efficient caching
+- **Result Quality**: 25-35% increase thanks to AI source filtering
+- **Startup Time**: from minutes to seconds when using cache
+- **Scalability**: support for thousands of queries with persistent cache
 
-### Детальные бенчмарки
+### Detailed Benchmarks
 
-**Первый запуск (без кеша)**:
-- Валидация окружения: ~2-5 секунд
-- Поиск источников: ~2-3 секунды  
-- Параллельная загрузка (15 документов): ~4-8 секунд
-- Создание embeddings: ~10-20 секунд
-- AI-генерация статьи: ~20-60 секунд
-- **Общее время**: ~40-95 секунд
+**First Run (No Cache)**:
+- Environment Validation: ~2-5 seconds
+- Source Search: ~2-3 seconds
+- Parallel Download (15 documents): ~4-8 seconds
+- Embeddings Creation: ~10-20 seconds
+- AI Article Generation: ~20-60 seconds
+- **Total Time**: ~40-95 seconds
 
-**Последующие запросы (с кешем)**:
-- Семантический поиск в кеше: ~1-2 секунды
-- Загрузка недостающих документов: ~2-5 секунд  
-- AI-генерация статьи: ~15-45 секунд
-- **Общее время**: ~20-50 секунд (до 70% ускорение!)
+**Subsequent Queries (With Cache)**:
+- Semantic Cache Search: ~1-2 seconds
+- Downloading Missing Documents: ~2-5 seconds
+- AI Article Generation: ~15-45 seconds
+- **Total Time**: ~20-50 seconds (up to 70% acceleration!)
 
-### Масштабируемость параллелизма
+### Concurrency Scalability
 
-| Concurrent Downloads | 15 URLs Время | Ускорение | Рекомендация |
+| Concurrent Downloads | 15 URLs Time | Acceleration | Recommendation |
 |---------------------|---------------|-----------|--------------|
-| 1 (последовательно) | ~30 секунд   | 1x        | Не рекомендуется |
-| 4                   | ~8 секунд    | 3.75x     | Консервативно |
-| 8 (по умолчанию)    | ~4 секунды   | 7.5x      | Оптимально |
-| 12                  | ~3 секунды   | 10x       | Агрессивно |
-| 20+                 | ~2-3 секунды | 10-15x    | Может вызвать блокировки |
+| 1 (sequential)      | ~30 seconds   | 1x        | Not recommended |
+| 4                   | ~8 seconds    | 3.75x     | Conservative |
+| 8 (default)         | ~4 seconds    | 7.5x      | Optimal |
+| 12                  | ~3 seconds    | 10x       | Aggressive |
+| 20+                 | ~2-3 seconds  | 10-15x    | May cause blocking |
 
-## API и расширяемость v2.0
+## API and Extensibility v2.0
 
-### Пример программного использования
+### Programmatic Usage Example
 
 ```rust
 use enhanced_rag_article_generator::{PersistentEnhancedRAG, CacheSettings, UserContext, ExpertiseLevel};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Настройки AI-enhanced кеша
+    // AI-enhanced cache settings
     let cache_settings = CacheSettings {
         enable_semantic_search: true,
         enable_personalization: true,
@@ -242,7 +242,7 @@ async fn main() -> anyhow::Result<()> {
         ..Default::default()
     };
 
-    // Персонализация пользователя
+    // User personalization
     let user_context = UserContext {
         expertise_level: ExpertiseLevel::Advanced,
         preferred_languages: vec!["en".to_string(), "ru".to_string()],
@@ -250,17 +250,17 @@ async fn main() -> anyhow::Result<()> {
         interaction_history: vec![chrono::Utc::now()],
     };
 
-    // Создание AI-enhanced генератора
+    // Create AI-enhanced generator
     let mut generator = PersistentEnhancedRAG::new_with_persistent_storage(
         "./ai_cache.db",
         "http://localhost:8080".to_string(),
-        "qwen2.5:32b".to_string(), 
+        "qwen2.5:32b".to_string(),
         "nomic-embed-text:latest".to_string(),
         Some("http://localhost:11434".to_string()),
         Some(cache_settings),
     )?;
 
-    // AI-enhanced генерация с персонализацией
+    // AI-enhanced generation with personalization
     let article = generator.generate_article_with_enhanced_cache(
         "Advanced Rust concurrency patterns for high-performance applications",
         20,
@@ -269,146 +269,146 @@ async fn main() -> anyhow::Result<()> {
 
     println!("{}", article);
 
-    // Просмотр аналитики
+    // View analytics
     let quality_stats = generator.get_quality_stats().await?;
-    println!("📊 Качество источников: {:.3}", quality_stats.average_quality_score);
+    println!("📊 Source Quality: {:.3}", quality_stats.average_quality_score);
 
     Ok(())
 }
 ```
 
-### Расширенные возможности интеграции
+### Advanced Integration Capabilities
 
 ```rust
-// Валидация окружения
+// Environment validation
 use enhanced_rag_article_generator::validate_environment;
 
 if validate_environment("qwen2.5:32b", "http://localhost:11434").await.is_err() {
-    // Автоматическая установка модели
+    // Automatic model installation
     auto_install_model("qwen2.5:32b").await?;
 }
 
-// Параллельная загрузка с пользовательскими настройками  
+// Parallel download with custom settings
 let documents = generator.load_documents_with_concurrency_limit(urls, 16).await?;
 
-// Получение детальной статистики
+// Get detailed statistics
 let (documents, stats) = generator.load_documents_with_stats(urls, 8).await?;
-println!("Скорость загрузки: {:.1} док/сек", stats.throughput);
+println!("Download speed: {:.1} docs/sec", stats.throughput);
 ```
 
-## Мониторинг и диагностика
+## Monitoring and Diagnostics
 
-### Расширенное логирование v2.0
+### Extended Logging v2.0
 
 ```bash
-# Детальная диагностика с производительностью
+# Detailed diagnostics with performance
 RUST_LOG=debug ./target/release/enhanced-rag-generator \
   --validate-env \
   --concurrent-downloads 12 \
   "your query"
 ```
 
-### Примеры полезных логов
+### Useful Log Examples
 
 ```
 🚀 Enhanced RAG Article Generator v2.0 - AI-Powered Edition
-🔍 Проверка окружения...
-✅ Ollama сервер доступен  
-✅ Модель 'qwen2.5:32b' доступна
-🚀 Параллельная загрузка 15 документов (concurrency: 8)
-📥 Загружаем документ 1 от github.com/rust-lang/rust...
-✅ Документ 1 загружен успешно (12847 символов)
-📊 Статистика загрузки:
-  ✅ Успешно: 14 из 15
-  🚀 Скорость: 3.2 док/сек  
-  💾 Данных: 1.8 МБ
-📊 Производительность: Generated 1247 tokens in 23.4s (53.3 tokens/s)
+🔍 Checking environment...
+✅ Ollama server available
+✅ Model "qwen2.5:32b" available
+🚀 Parallel download of 15 documents (concurrency: 8)
+📥 Downloading document 1 from github.com/rust-lang/rust...
+✅ Document 1 downloaded successfully (12847 chars)
+📊 Download statistics:
+  ✅ Successful: 14 of 15
+  🚀 Speed: 3.2 docs/sec
+  💾 Data: 1.8 MB
+📊 Performance: Generated 1247 tokens in 23.4s (53.3 tokens/s)
 ```
 
-### Система мониторинга качества
+### Quality Monitoring System
 
 ```bash
-# Аналитика качества источников
+# Source quality analytics
 ./target/release/enhanced-rag-generator \
   --database "./cache" \
   --show-quality-stats \
   "dummy"
 
-# Вывод:
-# ⭐ СТАТИСТИКА КАЧЕСТВА ИСТОЧНИКОВ
-# 📊 Всего источников: 1,247
-# 🏆 Очень высокое качество: 156 (12.5%)
-# ✨ Высокое качество: 423 (33.9%)  
-# 👍 Среднее качество: 521 (41.8%)
-# ⚠️ Низкое качество: 147 (11.8%)
-# 📈 Средняя оценка качества: 0.657
+# Output:
+# ⭐ SOURCE QUALITY STATISTICS
+# 📊 Total sources: 1,247
+# 🏆 Very high quality: 156 (12.5%)
+# ✨ High quality: 423 (33.9%)
+# 👍 Medium quality: 521 (41.8%)
+# ⚠️ Low quality: 147 (11.8%)
+# 📈 Average quality score: 0.657
 ```
 
-## Сравнение версий
+## Version Comparison
 
-| Аспект | v1.0 | v2.0 | Улучшение |
+| Aspect | v1.0 | v2.0 | Improvement |
 |--------|------|------|-----------|
-| **Загрузка документов** | ~30 сек (последовательно) | ~4-6 сек (параллельно) | **5-8x быстрее** |
-| **Качество источников** | Без фильтрации | AI-enhanced фильтрация | **+35% качества** |
-| **Кеширование** | Отсутствует | Персистентное + семантическое | **70% ускорение повторных запросов** |
-| **Обработка ошибок** | Базовая | Робастная с retry/fallback | **95% надежности** |
-| **Персонализация** | Нет | По уровню экспертизы | **Адаптивный контент** |
-| **Семантический поиск** | Нет | Полная поддержка | **Лучшая релевантность** |
-| **Валидация окружения** | Ручная | Автоматическая | **Zero-config запуск** |
-| **Размер кеша** | - | До 4GB с метаданными | **Масштабируемость** |
+| **Document Download** | ~30 sec (sequential) | ~4-6 sec (parallel) | **5-8x faster** |
+| **Source Quality** | No filtering | AI-enhanced filtering | **+35% quality** |
+| **Caching** | None | Persistent + Semantic | **70% repeat query acceleration** |
+| **Error Handling** | Basic | Robust with retry/fallback | **95% reliability** |
+| **Personalization** | None | By expertise level | **Adaptive content** |
+| **Semantic Search** | None | Full support | **Better relevance** |
+| **Environment Validation** | Manual | Automatic | **Zero-config run** |
+| **Cache Size** | - | Up to 4GB with metadata | **Scalability** |
 
-## Устранение неполадок v2.0
+## Troubleshooting v2.0
 
-### Автоматическая диагностика
+### Automatic Diagnostics
 
 ```bash
-# Полная проверка системы
+# Full system check
 ./target/release/enhanced-rag-generator \
   --validate-env \
   --auto-install \
   "test query"
 ```
 
-### Самые частые сценарии
+### Most Common Scenarios
 
-1. **🔧 Автоматическое исправление окружения**:
+1. **🔧 Automatic Environment Fix**:
 ```bash
-# Система сама определит и исправит проблемы
+# System will identify and fix problems itself
 ./enhanced-rag-generator --validate-env --auto-install "test"
 ```
 
-2. **⚡ Оптимизация производительности**:  
+2. **⚡ Performance Optimization**:
 ```bash
-# Настройка под ваше железо
+# Tuning for your hardware
 ./enhanced-rag-generator --concurrent-downloads 16 --quality-threshold 0.3 "query"
 ```
 
-3. **💾 Управление кешем**:
+3. **💾 Cache Management**:
 ```bash
-# Очистка при проблемах с кешем
+# Cleanup in case of cache issues
 ./enhanced-rag-generator --database "./cache" --cleanup-cache "query"
 ```
 
-4. **🤖 Проблемы с моделями**:
+4. **🤖 Model Issues**:
 ```
-❌ Модель 'qwen2.5:32b' не найдена.
-Доступные модели: llama3.2:3b, phi3:mini
-Установите нужную модель: ollama pull qwen2.5:32b
+❌ Model "qwen2.5:32b" not found.
+Available models: llama3.2:3b, phi3:mini
+Install required model: ollama pull qwen2.5:32b
 
-💡 РЕШЕНИЯ:
-• Установите модель: ollama pull qwen2.5:32b  
-• Используйте существующую: --model "llama3.2:3b"
-• Автоустановка: --auto-install
+💡 SOLUTIONS:
+• Install model: ollama pull qwen2.5:32b
+• Use existing: --model "llama3.2:3b"
+• Auto-installation: --auto-install
 ```
 
-### Продвинутая отладка
+### Advanced Debugging
 
 ```bash
-# Пошаговая диагностика
-curl http://localhost:11434/api/tags        # Проверка Ollama
-curl http://localhost:8080                  # Проверка SearXNG  
+# Step-by-step diagnostics
+curl http://localhost:11434/api/tags        # Check Ollama
+curl http://localhost:8080                  # Check SearXNG
 
-# Тестирование компонентов
+# Test components
 cargo test ollama_error_handling_test
 cargo test parallel_download_test
 cargo test semantic_search_test
@@ -416,32 +416,32 @@ cargo test semantic_search_test
 
 ## Roadmap v3.0
 
-### В разработке
-- [ ] **Векторная БД интеграция** (Pinecone, Weaviate, Qdrant)
-- [ ] **Графовые RAG** для связанных концепций
-- [ ] **Мультимодальность** (изображения, видео, аудио)
-- [ ] **Коллаборативная фильтрация** источников
-- [ ] **Real-time обновления** кеша
+### In Development
+- [ ] **Vector DB Integration** (Pinecone, Weaviate, Qdrant)
+- [ ] **Graph RAG** for related concepts
+- [ ] **Multimodality** (images, video, audio)
+- [ ] **Collaborative Filtering** of sources
+- [ ] **Real-time Cache Updates**
 
-### Планируется
-- [ ] **Web UI** с интерактивным интерфейсом
-- [ ] **REST API** для микросервисной архитектуры
-- [ ] **Kubernetes** операторы для масштабирования
-- [ ] **Monitoring** интеграция (Prometheus, Grafana)
-- [ ] **Multi-tenancy** для Enterprise использования
+### Planned
+- [ ] **Web UI** with interactive interface
+- [ ] **REST API** for microservice architecture
+- [ ] **Kubernetes** operators for scaling
+- [ ] **Monitoring** integration (Prometheus, Grafana)
+- [ ] **Multi-tenancy** for Enterprise usage
 
-### Экспериментальные возможности
-- [ ] **Федеративный поиск** по множественным источникам
-- [ ] **AI-агенты** для автономного исследования
-- [ ] **Blockchain** верификация источников
-- [ ] **Квантовые алгоритмы** для поиска
+### Experimental Features
+- [ ] **Federated Search** across multiple sources
+- [ ] **AI Agents** for autonomous research
+- [ ] **Blockchain** source verification
+- [ ] **Quantum Algorithms** for search
 
-## Производственное использование
+## Production Usage
 
-### Enterprise готовность
+### Enterprise Readiness
 
 ```bash
-# Настройка для production
+# Setup for production
 ./enhanced-rag-generator \
   --database "./cache" \
   --concurrent-downloads 20 \
@@ -452,32 +452,31 @@ cargo test semantic_search_test
   "production query"
 ```
 
-### Рекомендации по масштабированию
+### Scaling Recommendations
 
-- **CPU**: 8+ ядер для оптимальной параллельной обработки
-- **RAM**: 16GB+ для больших кешей и embeddings
-- **Диск**: SSD для быстрого доступа к кешу (рекомендуется NVMe)
-- **Сеть**: Стабильное подключение для загрузки источников
+- **CPU**: 8+ cores for optimal parallel processing
+- **RAM**: 16GB+ for large caches and embeddings
+- **Disk**: SSD for fast cache access (NVMe recommended)
+- **Network**: Stable connection for source downloading
 
-## Лицензия
+## License
 
-MIT License - подробности в файле LICENSE
+MIT License - see LICENSE file for details
 
-## Контрибьюция
+## Contribution
 
-Мы приветствуем вклад в развитие проекта! 
+We welcome contributions to project development!
 
-### Приоритетные области:
-1. **Интеграции** с внешними сервисами
-2. **Оптимизация** производительности
-3. **Тестирование** новых сценариев использования
-4. **Документация** и примеры
-5. **UI/UX** улучшения
+### Priority Areas:
+1. **Integrations** with external services
+2. **Performance Optimization**
+3. **Testing** new usage scenarios
+4. **Documentation** and examples
+5. **UI/UX** improvements
 
-### Процесс:
-1. Форк репозитория
-2. Создание feature branch (`git checkout -b feature/ai-powered-feature`)  
-3. Коммит изменений (`git commit -m 'Add AI-powered feature'`)
-4. Push в branch (`git push origin feature/ai-powered-feature`)
-5. Открытие Pull Request
-
+### Process:
+1. Fork repository
+2. Create feature branch (`git checkout -b feature/ai-powered-feature`)
+3. Commit changes (`git commit -m "Add AI-powered feature"`)
+4. Push to branch (`git push origin feature/ai-powered-feature`)
+5. Open Pull Request

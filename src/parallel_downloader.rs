@@ -1,5 +1,6 @@
 use anyhow::Result;
 use futures::{stream, StreamExt};
+use sha2::{Digest, Sha256};
 use std::time::{Duration, Instant};
 use tracing::{info, warn};
 
@@ -31,10 +32,7 @@ impl EnhancedRAGArticleGenerator {
             .await?;
 
         info!("📊 Download statistics:");
-        info!(
-            "  ✅ Successful: {} of {}",
-            stats.successful, stats.total_urls
-        );
+        info!("  ✅ Successful: {} of {}", stats.successful, stats.total_urls);
         info!("  ❌ Failed: {}", stats.failed);
         info!("  ⏱️ Time: {:.2}s", stats.elapsed_time.as_secs_f32());
         info!("  🚀 Speed: {:.1} docs/sec", stats.throughput);
@@ -66,6 +64,11 @@ impl EnhancedRAGArticleGenerator {
     ) -> Result<(Vec<Document>, DownloadStats)> {
         if urls.is_empty() {
             return Ok((Vec::new(), DownloadStats::default()));
+        }
+
+        // Validate concurrent_limit
+        if concurrent_limit == 0 {
+            return Err(anyhow::anyhow!("concurrent_limit must be >= 1"));
         }
 
         info!(
@@ -144,7 +147,12 @@ impl EnhancedRAGArticleGenerator {
         }
 
         let elapsed_time = start_time.elapsed();
-        let throughput = successful as f64 / elapsed_time.as_secs_f64();
+        let elapsed_secs = elapsed_time.as_secs_f64();
+        let throughput = if elapsed_secs > 0.0 {
+            successful as f64 / elapsed_secs
+        } else {
+            0.0
+        };
 
         let stats = DownloadStats {
             total_urls: urls.len(),
@@ -177,7 +185,11 @@ impl EnhancedRAGArticleGenerator {
             .map_err(|e| anyhow::anyhow!("HTTP request error: {}", e))?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("HTTP error {}: {}", response.status(), url));
+            return Err(anyhow::anyhow!(
+                "HTTP error {}: {}",
+                response.status(),
+                url
+            ));
         }
 
         let content = response
@@ -206,9 +218,12 @@ impl EnhancedRAGArticleGenerator {
         metadata.insert("source_url".to_string(), url.to_string());
         metadata.insert("content_length".to_string(), content.len().to_string());
         metadata.insert("download_time".to_string(), chrono::Utc::now().to_rfc3339());
+
+        let mut hasher = Sha256::new();
+        hasher.update(content.as_bytes());
         metadata.insert(
             "content_hash".to_string(),
-            format!("{:x}", md5::compute(&content)),
+            format!("{:x}", hasher.finalize()),
         );
 
         // Extract domain for metadata
@@ -260,11 +275,17 @@ impl EnhancedRAGArticleGenerator {
 
     /// Utility to truncate long URLs in logs
     fn truncate_url(url: &str, max_len: usize) -> String {
-        if url.len() <= max_len {
-            url.to_string()
-        } else {
-            format!("{}...", &url[..max_len.saturating_sub(3)])
+        if max_len == 0 {
+            return String::new();
         }
+        if url.chars().count() <= max_len {
+            return url.to_string();
+        }
+        if max_len <= 3 {
+            return url.chars().take(max_len).collect();
+        }
+        let truncated: String = url.chars().take(max_len - 3).collect();
+        format!("{truncated}...")
     }
 }
 

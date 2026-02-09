@@ -1,7 +1,7 @@
 use anyhow::Result;
 use reqwest;
 use serde::Deserialize;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 /// Universal structure for Ollama API response.
 /// Supports all formats: success responses, errors, chat format.
@@ -84,6 +84,9 @@ impl OllamaResponse {
     /// Returns performance information
     pub fn get_performance_info(&self) -> Option<String> {
         if let (Some(total), Some(eval_count)) = (self.total_duration, self.eval_count) {
+            if total == 0 {
+                return None;
+            }
             let total_seconds = total as f64 / 1_000_000_000.0;
             let tokens_per_second = eval_count as f64 / total_seconds;
             Some(format!(
@@ -251,8 +254,8 @@ where
 
 /// Parses Ollama response with error handling
 pub fn parse_ollama_response(response_text: &str) -> Result<String> {
-    // Log raw response for debugging
-    info!("Raw Ollama response: {}", response_text);
+    // Log raw response for debugging at debug level to avoid sensitive data leak
+    debug!("Raw Ollama response: {}", response_text);
 
     // Parse universal structure
     let ollama_response: OllamaResponse = serde_json::from_str(response_text)

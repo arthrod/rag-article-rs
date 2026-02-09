@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use heed::types::*;
 use heed::{Database, Env, EnvOpenOptions};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use tracing::info;
 
@@ -47,11 +47,11 @@ pub enum SourceType {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, PartialOrd)]
 pub enum ReliabilityRating {
-    VeryHigh, // 0.9+: arXiv, official documentation
-    High,     // 0.7-0.9: verified blogs, GitHub
-    Medium,   // 0.5-0.7: regular websites
-    Low,      // 0.3-0.5: questionable sources
-    VeryLow,  // 0.0-0.3: spam, misinformation
+    VeryHigh,    // 0.9+: arXiv, official documentation
+    High,        // 0.7-0.9: verified blogs, GitHub
+    Medium,      // 0.5-0.7: regular websites
+    Low,         // 0.3-0.5: questionable sources
+    VeryLow,     // 0.0-0.3: spam, misinformation
 }
 
 /// Cached document structure with vector data
@@ -71,7 +71,7 @@ pub struct CachedDocument {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocumentQualityMetrics {
     pub content_length: usize,
-    pub structure_score: f32,   // Presence of headers, lists
+    pub structure_score: f32,  // Presence of headers, lists
     pub readability_score: f32, // Text complexity
     pub technical_depth: f32,   // Depth of technical content
 }
@@ -150,16 +150,8 @@ impl CachedDocument {
         let readability_score = (20.0 - avg_sentence_length.min(20.0)) / 20.0;
 
         // Technical depth (keywords, code examples)
-        let technical_keywords = [
-            "function",
-            "class",
-            "implementation",
-            "algorithm",
-            "performance",
-            "optimization",
-        ];
-        let tech_count = technical_keywords
-            .iter()
+        let technical_keywords = ["function", "class", "implementation", "algorithm", "performance", "optimization"];
+        let tech_count = technical_keywords.iter()
             .map(|&word| content.to_lowercase().matches(word).count())
             .sum::<usize>() as f32;
         let technical_depth = (tech_count / (content_length as f32 / 1000.0).max(1.0)).min(1.0);
@@ -238,14 +230,8 @@ impl EnhancedSourceMetadata {
 
         // Bonus for authoritative domains
         let trusted_domains = [
-            "arxiv.org",
-            "github.com",
-            "stackoverflow.com",
-            "docs.rs",
-            "rust-lang.org",
-            "mozilla.org",
-            "wikipedia.org",
-            "medium.com",
+            "arxiv.org", "github.com", "stackoverflow.com", "docs.rs",
+            "rust-lang.org", "mozilla.org", "wikipedia.org", "medium.com"
         ];
 
         if trusted_domains.iter().any(|&d| domain.contains(d)) {
@@ -354,18 +340,8 @@ impl CachedQuery {
 
         // Simple extraction of key technical terms
         let tech_terms = [
-            "rust",
-            "python",
-            "javascript",
-            "async",
-            "web",
-            "framework",
-            "database",
-            "api",
-            "performance",
-            "security",
-            "testing",
-            "deployment",
+            "rust", "python", "javascript", "async", "web", "framework",
+            "database", "api", "performance", "security", "testing", "deployment"
         ];
 
         for word in words {
@@ -382,21 +358,20 @@ impl CachedQuery {
     /// Calculates semantic similarity with another query
     pub fn semantic_similarity(&self, other: &CachedQuery) -> f32 {
         if let (Some(ref embedding1), Some(ref embedding2)) = (&self.embedding, &other.embedding) {
-            cosine_similarity(embedding1, embedding2)
-        } else {
-            // Fallback to text similarity
-            let topics1: std::collections::HashSet<_> = self.semantic_topics.iter().collect();
-            let topics2: std::collections::HashSet<_> = other.semantic_topics.iter().collect();
-
-            let intersection = topics1.intersection(&topics2).count() as f32;
-            let union = topics1.union(&topics2).count() as f32;
-
-            if union > 0.0 {
-                intersection / union
-            } else {
-                0.0
+            // Guard against mismatched embedding lengths
+            if embedding1.len() == embedding2.len() {
+                return cosine_similarity(embedding1, embedding2);
             }
         }
+
+        // Fallback to text similarity if embeddings missing or mismatched
+        let topics1: HashSet<_> = self.semantic_topics.iter().collect();
+        let topics2: HashSet<_> = other.semantic_topics.iter().collect();
+
+        let intersection = topics1.intersection(&topics2).count() as f32;
+        let union = topics1.union(&topics2).count() as f32;
+
+        if union > 0.0 { intersection / union } else { 0.0 }
     }
 }
 
@@ -440,8 +415,7 @@ pub struct PersistentEnhancedRAG {
     env: Option<Env>,
     document_cache: Option<Database<Str, SerdeBincode<CachedDocument>>>,
     query_cache: Option<Database<Str, SerdeBincode<CachedQuery>>>,
-    metadata_cache:
-        Option<Database<U32<byteorder::NativeEndian>, SerdeBincode<EnhancedSourceMetadata>>>,
+    metadata_cache: Option<Database<U32<byteorder::NativeEndian>, SerdeBincode<EnhancedSourceMetadata>>>,
 
     /// Vector database (arroy) for semantic search
     /// Used for storing and searching document vector representations
@@ -464,12 +438,12 @@ impl PersistentEnhancedRAG {
         let inner = EnhancedRAGArticleGenerator::new(
             searx_host,
             model_name,
-            embedding_model_name,
+            embedding_model_name.clone(),
             ollama_host.clone(),
         );
 
         let embedding_model = Some(Box::new(OllamaEmbeddings::new(
-            "nomic-embed-text:latest".to_string(),
+            embedding_model_name,
             ollama_host,
         )) as Box<dyn EmbeddingModel + Send + Sync>);
 
@@ -495,10 +469,7 @@ impl PersistentEnhancedRAG {
         ollama_host: Option<String>,
         cache_settings: Option<CacheSettings>,
     ) -> Result<Self> {
-        info!(
-            "Initializing extended persistent storage: {:?}",
-            db_path.as_ref()
-        );
+        info!("Initializing extended persistent storage: {:?}", db_path.as_ref());
 
         let env = unsafe {
             EnvOpenOptions::new()
@@ -519,12 +490,12 @@ impl PersistentEnhancedRAG {
         let inner = EnhancedRAGArticleGenerator::new(
             searx_host,
             model_name,
-            embedding_model_name,
+            embedding_model_name.clone(),
             ollama_host.clone(),
         );
 
         let embedding_model = Some(Box::new(OllamaEmbeddings::new(
-            "nomic-embed-text:latest".to_string(),
+            embedding_model_name,
             ollama_host,
         )) as Box<dyn EmbeddingModel + Send + Sync>);
 
@@ -566,14 +537,15 @@ impl PersistentEnhancedRAG {
         // 2. Extract quality documents
         let mut cached_docs = Vec::new();
         let mut fresh_urls = Vec::new();
+        let mut all_urls = HashSet::new();
 
         for cached_query in similar_queries {
             for url in cached_query.related_urls {
                 if let Some(doc) = self.get_cached_document(&url).await? {
-                    if doc.is_fresh(self.cache_settings.max_document_age_days)
-                        && self.meets_quality_threshold(&doc)
-                    {
+                    if doc.is_fresh(self.cache_settings.max_document_age_days) &&
+                       self.meets_quality_threshold(&doc) {
                         cached_docs.push(self.cached_to_document(&doc));
+                        all_urls.insert(url);
                     } else {
                         fresh_urls.push(url);
                     }
@@ -584,10 +556,7 @@ impl PersistentEnhancedRAG {
         // 3. Intelligent loading of new documents
         if cached_docs.len() < max_retrieved_docs {
             let needed_docs = max_retrieved_docs - cached_docs.len();
-            let new_urls = self
-                .inner
-                .search_and_collect_urls(query, needed_docs as u32)
-                .await?;
+            let new_urls = self.inner.search_and_collect_urls(query, needed_docs as u32).await?;
 
             // Filtering by quality sources
             let filtered_urls = self.filter_quality_urls(new_urls).await?;
@@ -597,41 +566,34 @@ impl PersistentEnhancedRAG {
         // 4. Loading and extended caching with parallel download
         if !fresh_urls.is_empty() {
             // USE PARALLEL DOWNLOAD
-            let new_docs = self
-                .inner
-                .load_documents_with_concurrency_limit(
-                    fresh_urls.clone(),
-                    self.cache_settings.max_concurrent_downloads,
-                )
-                .await?;
+            let new_docs = self.inner.load_documents_with_concurrency_limit(
+                fresh_urls.clone(),
+                self.cache_settings.max_concurrent_downloads
+            ).await?;
 
             for doc in &new_docs {
                 self.enhanced_cache_document(doc).await?;
+                if let Some(url) = doc.metadata.get("source_url") {
+                    all_urls.insert(url.clone());
+                }
             }
 
             cached_docs.extend(new_docs);
         }
 
         // 5. Caching query with semantic analysis
-        self.enhanced_cache_query(query, &fresh_urls, user_context)
-            .await?;
+        let combined_urls: Vec<String> = all_urls.into_iter().collect();
+        self.enhanced_cache_query(query, &combined_urls, user_context).await?;
 
         // 6. Intelligent ranking
-        let retrieved_docs = self
-            .intelligent_ranking(&cached_docs, query, max_retrieved_docs)
-            .await?;
+        let retrieved_docs = self.intelligent_ranking(&cached_docs, query, max_retrieved_docs).await?;
         let context = self.inner.prepare_context_with_sources(&retrieved_docs);
 
         // 7. Generation with extended prompt
-        let article_prompt = self
-            .build_ai_enhanced_prompt(query, &context, &cached_docs)
-            .await?;
+        let article_prompt = self.build_ai_enhanced_prompt(query, &context, &cached_docs).await?;
         let article_text = self.inner.language_model.generate(&article_prompt).await?;
 
-        info!(
-            "Article generated using {} documents (AI-enhanced)",
-            retrieved_docs.len()
-        );
+        info!("Article generated using {} documents (AI-enhanced)", retrieved_docs.len());
         Ok(self.inner.add_enhanced_sources_list(&article_text))
     }
 
@@ -769,13 +731,30 @@ impl PersistentEnhancedRAG {
         let mut wtxn = env.write_txn()?;
         document_cache.put(&mut wtxn, url, &cached_doc)?;
 
-        // Create and save extended source metadata
-        if let Some(source_metadata) = self.inner.sources_metadata().get(&(self.next_source_id)) {
-            let enhanced_metadata =
-                EnhancedSourceMetadata::from_basic(source_metadata, &doc.page_content);
-            let metadata_cache = self.metadata_cache.as_ref().unwrap();
-            metadata_cache.put(&mut wtxn, &self.next_source_id, &enhanced_metadata)?;
-            self.next_source_id += 1;
+        // Determine source ID: check doc metadata, existing metadata, or use new ID
+        let source_id = doc
+            .metadata
+            .get("source_number")
+            .and_then(|v| v.parse::<u32>().ok())
+            .or_else(|| {
+                self.inner
+                    .sources_metadata()
+                    .iter()
+                    .find(|(_, meta)| meta.url == *url)
+                    .map(|(id, _)| *id)
+            })
+            .or(Some(self.next_source_id));
+
+        if let Some(source_id) = source_id {
+            if let Some(source_metadata) = self.inner.sources_metadata().get(&source_id) {
+                let enhanced_metadata =
+                    EnhancedSourceMetadata::from_basic(source_metadata, &doc.page_content);
+                let metadata_cache = self.metadata_cache.as_ref().unwrap();
+                metadata_cache.put(&mut wtxn, &source_id, &enhanced_metadata)?;
+                if source_id == self.next_source_id {
+                    self.next_source_id += 1;
+                }
+            }
         }
 
         wtxn.commit()?;
@@ -787,7 +766,7 @@ impl PersistentEnhancedRAG {
         &self,
         query: &str,
         urls: &[String],
-        user_context: Option<UserContext>,
+        user_context: Option<UserContext>
     ) -> Result<()> {
         let env = match &self.env {
             Some(env) => env,
@@ -829,7 +808,7 @@ impl PersistentEnhancedRAG {
         &self,
         documents: &[Document],
         query: &str,
-        max_docs: usize,
+        max_docs: usize
     ) -> Result<Vec<Document>> {
         if documents.is_empty() {
             return Ok(Vec::new());
@@ -849,7 +828,7 @@ impl PersistentEnhancedRAG {
         &self,
         documents: &[Document],
         query: &str,
-        max_docs: usize,
+        max_docs: usize
     ) -> Result<Vec<Document>> {
         let embedding_model = self.embedding_model.as_ref().unwrap();
         let query_embedding = embedding_model.embed_query(query).await?;
@@ -857,14 +836,20 @@ impl PersistentEnhancedRAG {
         let mut scored_docs = Vec::new();
 
         for doc in documents {
-            // Get document embedding from cache or create new
-            let doc_embedding = if let Some(cached_doc) = self
-                .get_cached_document(doc.metadata.get("source_url").unwrap())
-                .await?
-            {
-                cached_doc
-                    .embedding
-                    .unwrap_or_else(|| vec![0.0; query_embedding.len()])
+            // Get document embedding from cache or create new, checking dimensionality
+            let doc_embedding = if let Some(cached_doc) = self.get_cached_document(
+                doc.metadata.get("source_url").unwrap()
+            ).await? {
+                if let Some(ref cached_emb) = cached_doc.embedding {
+                    if cached_emb.len() == query_embedding.len() {
+                        cached_emb.clone()
+                    } else {
+                         // Dimensions mismatch, recompute
+                         embedding_model.embed_query(&doc.page_content).await?
+                    }
+                } else {
+                    embedding_model.embed_query(&doc.page_content).await?
+                }
             } else {
                 embedding_model.embed_query(&doc.page_content).await?
             };
@@ -872,12 +857,11 @@ impl PersistentEnhancedRAG {
             let semantic_score = cosine_similarity(&query_embedding, &doc_embedding);
 
             // Combine semantic score with quality metrics
-            let quality_bonus = if let Some(cached_doc) = self
-                .get_cached_document(doc.metadata.get("source_url").unwrap())
-                .await?
-            {
-                cached_doc.quality_metrics.technical_depth * 0.2
-                    + cached_doc.quality_metrics.structure_score * 0.1
+            let quality_bonus = if let Some(cached_doc) = self.get_cached_document(
+                doc.metadata.get("source_url").unwrap()
+            ).await? {
+                cached_doc.quality_metrics.technical_depth * 0.2 +
+                cached_doc.quality_metrics.structure_score * 0.1
             } else {
                 0.0
             };
@@ -896,12 +880,7 @@ impl PersistentEnhancedRAG {
     }
 
     /// Enhanced text ranking considering quality
-    fn enhanced_text_ranking(
-        &self,
-        documents: &[Document],
-        query: &str,
-        max_docs: usize,
-    ) -> Vec<Document> {
+    fn enhanced_text_ranking(&self, documents: &[Document], query: &str, max_docs: usize) -> Vec<Document> {
         let query_lower = query.to_lowercase();
         let query_words: Vec<&str> = query_lower.split_whitespace().collect();
 
@@ -931,18 +910,9 @@ impl PersistentEnhancedRAG {
 
                 // Bonus for document quality (if metrics available)
                 // In simple mode give small bonus for length and structure
-                let length_bonus = if doc.page_content.len() > 1000 {
-                    0.1
-                } else {
-                    0.0
-                };
-                let structure_bonus = if doc.page_content.contains("```")
-                    || doc.page_content.matches('#').count() > 2
-                {
-                    0.1
-                } else {
-                    0.0
-                };
+                let length_bonus = if doc.page_content.len() > 1000 { 0.1 } else { 0.0 };
+                let structure_bonus = if doc.page_content.contains("```") ||
+                                        doc.page_content.matches('#').count() > 2 { 0.1 } else { 0.0 };
 
                 score += length_bonus + structure_bonus;
 
@@ -963,7 +933,7 @@ impl PersistentEnhancedRAG {
         &self,
         query: &str,
         context: &str,
-        cached_docs: &[Document],
+        cached_docs: &[Document]
     ) -> Result<String> {
         let semantic_info = if self.cache_settings.enable_semantic_search {
             "\nNOTE: This response utilizes advanced semantic analysis and quality-filtered sources for enhanced accuracy and relevance.\n"
@@ -1023,10 +993,7 @@ impl PersistentEnhancedRAG {
     }
 
     /// Gets source metadata by URL
-    async fn get_source_metadata_by_url(
-        &self,
-        url: &str,
-    ) -> Result<Option<EnhancedSourceMetadata>> {
+    async fn get_source_metadata_by_url(&self, url: &str) -> Result<Option<EnhancedSourceMetadata>> {
         let env = match &self.env {
             Some(env) => env,
             None => return Ok(None),
@@ -1099,14 +1066,8 @@ impl PersistentEnhancedRAG {
         Ok(stats)
     }
 
-    /// Vector document search (placeholder for future versions)
-    /// Requires additional integration with arroy for full-functional search
-    #[allow(dead_code)]
-    pub async fn vector_similarity_search(
-        &self,
-        query_embedding: &[f32],
-        k: usize,
-    ) -> Result<Vec<Document>> {
+    /// Vector document search
+    pub async fn vector_similarity_search(&self, query_embedding: &[f32], k: usize) -> Result<Vec<Document>> {
         // TODO: Full implementation of vector search with arroy
         // Current version uses semantic search via embeddings in documents
         // For production usage required:
@@ -1115,9 +1076,8 @@ impl PersistentEnhancedRAG {
         // 3. Extraction of corresponding documents from cache
         // 4. Return sorted list of documents
 
-        // Temporary stub - returns empty list
         let _ = (query_embedding, k); // remove warnings about unused parameters
-        Ok(Vec::new())
+        Err(anyhow::anyhow!("vector_similarity_search not implemented - arroy index/search missing"))
     }
 
     // Inherit other methods with updated signatures
@@ -1127,8 +1087,7 @@ impl PersistentEnhancedRAG {
         max_retrieved_docs: usize,
     ) -> Result<String> {
         // Use extended version without user context
-        self.generate_article_with_enhanced_cache(query, max_retrieved_docs, None)
-            .await
+        self.generate_article_with_enhanced_cache(query, max_retrieved_docs, None).await
     }
 
     // Other base methods remain the same...
@@ -1286,10 +1245,8 @@ impl PersistentEnhancedRAG {
 
         wtxn.commit()?;
 
-        info!(
-            "Extended cache cleanup completed: deleted {} documents and {} queries",
-            deleted_docs, deleted_queries
-        );
+        info!("Extended cache cleanup completed: deleted {} documents and {} queries",
+              deleted_docs, deleted_queries);
 
         Ok(CleanupStats {
             deleted_documents: deleted_docs,
@@ -1321,554 +1278,4 @@ pub struct QualityStats {
     pub low_quality: usize,
     pub very_low_quality: usize,
     pub average_quality_score: f32,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::tempdir;
-
-    // Test CachedDocument
-    #[test]
-    fn test_cached_document_is_fresh() {
-        let doc = CachedDocument {
-            url: "https://test.com".to_string(),
-            content_hash: "hash123".to_string(),
-            page_content: "content".to_string(),
-            metadata: HashMap::new(),
-            processed_at: Utc::now(),
-            embedding: None,
-            quality_metrics: DocumentQualityMetrics {
-                content_length: 100,
-                structure_score: 0.5,
-                readability_score: 0.5,
-                technical_depth: 0.5,
-            },
-            language: "en".to_string(),
-            topics: vec![],
-        };
-
-        assert!(doc.is_fresh(7));
-        assert!(doc.is_fresh(1));
-        assert!(!doc.is_fresh(0));
-    }
-
-    #[test]
-    fn test_cached_document_is_not_fresh() {
-        let old_date = Utc::now() - chrono::Duration::days(10);
-        let doc = CachedDocument {
-            url: "https://test.com".to_string(),
-            content_hash: "hash123".to_string(),
-            page_content: "content".to_string(),
-            metadata: HashMap::new(),
-            processed_at: old_date,
-            embedding: None,
-            quality_metrics: DocumentQualityMetrics {
-                content_length: 100,
-                structure_score: 0.5,
-                readability_score: 0.5,
-                technical_depth: 0.5,
-            },
-            language: "en".to_string(),
-            topics: vec![],
-        };
-
-        assert!(!doc.is_fresh(7));
-        assert!(doc.is_fresh(14));
-    }
-
-    #[test]
-    fn test_content_hash_generation() {
-        let content1 = "test content";
-        let content2 = "test content";
-        let content3 = "different content";
-
-        let hash1 = CachedDocument::content_hash(content1);
-        let hash2 = CachedDocument::content_hash(content2);
-        let hash3 = CachedDocument::content_hash(content3);
-
-        assert_eq!(hash1, hash2);
-        assert_ne!(hash1, hash3);
-    }
-
-    #[test]
-    fn test_analyze_quality_metrics() {
-        let content = "# Header 1\n\n## Header 2\n\n- List item 1\n- List item 2\n\n```rust\ncode example\n```\n\nSome text with function and implementation keywords.";
-        let metrics = CachedDocument::analyze_quality(content);
-
-        assert!(metrics.structure_score > 0.0);
-        assert!(metrics.readability_score >= 0.0 && metrics.readability_score <= 1.0);
-        assert!(metrics.technical_depth > 0.0);
-        assert_eq!(metrics.content_length, content.len());
-    }
-
-    #[test]
-    fn test_analyze_quality_short_content() {
-        let content = "Short";
-        let metrics = CachedDocument::analyze_quality(content);
-
-        assert_eq!(metrics.content_length, 5);
-        assert!(metrics.structure_score >= 0.0);
-    }
-
-    #[test]
-    fn test_detect_language_english() {
-        let content = "This is English content with many words";
-        let lang = CachedDocument::detect_language(content);
-        assert_eq!(lang, "en");
-    }
-
-    #[test]
-    fn test_detect_language_russian() {
-        let content = "Это русский текст с большим количеством слов";
-        let lang = CachedDocument::detect_language(content);
-        assert_eq!(lang, "ru");
-    }
-
-    #[test]
-    fn test_extract_topics_from_headers() {
-        let content = "# Topic One\n\nContent\n\n## Topic Two\n\nMore content\n\n### Topic Three";
-        let topics = CachedDocument::extract_topics(content);
-
-        assert!(topics.len() >= 2);
-        assert!(topics.contains(&"Topic One".to_string()));
-        assert!(topics.contains(&"Topic Two".to_string()));
-    }
-
-    #[test]
-    fn test_extract_topics_empty_content() {
-        let content = "No headers here";
-        let topics = CachedDocument::extract_topics(content);
-        assert_eq!(topics.len(), 0);
-    }
-
-    #[test]
-    fn test_extract_topics_truncates_to_10() {
-        let mut content = String::new();
-        for i in 0..20 {
-            content.push_str(&format!("# Topic {}\n\n", i));
-        }
-        let topics = CachedDocument::extract_topics(&content);
-        assert_eq!(topics.len(), 10);
-    }
-
-    // Test EnhancedSourceMetadata
-    #[test]
-    fn test_enhanced_source_metadata_from_basic() {
-        let basic = SourceMetadata {
-            url: "https://github.com/test".to_string(),
-            title: "Test Repo".to_string(),
-            snippet: "snippet".to_string(),
-            domain: "github.com".to_string(),
-            content_summary: "summary".to_string(),
-            topics_covered: vec!["rust".to_string()],
-        };
-
-        let content = "# Test\nSome code example with function and class";
-        let enhanced = EnhancedSourceMetadata::from_basic(&basic, content);
-
-        assert_eq!(enhanced.url, basic.url);
-        assert_eq!(enhanced.title, basic.title);
-        assert!(enhanced.quality_score > 0.0);
-        assert_eq!(enhanced.language, "en");
-        assert!(matches!(
-            enhanced.reliability_rating,
-            ReliabilityRating::VeryHigh
-        ));
-    }
-
-    #[test]
-    fn test_calculate_quality_score_trusted_domain() {
-        let score = EnhancedSourceMetadata::calculate_quality_score(
-            "arxiv.org",
-            "# Header\nContent with algorithm and performance",
-        );
-        assert!(score > 0.5);
-    }
-
-    #[test]
-    fn test_calculate_quality_score_unknown_domain() {
-        let score = EnhancedSourceMetadata::calculate_quality_score("unknown.com", "Short");
-        assert!(score > 0.0);
-        assert!(score <= 1.0);
-    }
-
-    #[test]
-    fn test_determine_reliability_academic() {
-        let rating = EnhancedSourceMetadata::determine_reliability("arxiv.org", 0.8);
-        assert_eq!(rating, ReliabilityRating::VeryHigh);
-    }
-
-    #[test]
-    fn test_determine_reliability_by_score() {
-        assert_eq!(
-            EnhancedSourceMetadata::determine_reliability("example.com", 0.75),
-            ReliabilityRating::High
-        );
-        assert_eq!(
-            EnhancedSourceMetadata::determine_reliability("example.com", 0.55),
-            ReliabilityRating::Medium
-        );
-        assert_eq!(
-            EnhancedSourceMetadata::determine_reliability("example.com", 0.35),
-            ReliabilityRating::Low
-        );
-        assert_eq!(
-            EnhancedSourceMetadata::determine_reliability("example.com", 0.15),
-            ReliabilityRating::VeryLow
-        );
-    }
-
-    #[test]
-    fn test_classify_source_type() {
-        assert!(matches!(
-            EnhancedSourceMetadata::classify_source_type("https://arxiv.org/paper", "content"),
-            SourceType::Academic
-        ));
-        assert!(matches!(
-            EnhancedSourceMetadata::classify_source_type("https://docs.example.com", "content"),
-            SourceType::Documentation
-        ));
-        assert!(matches!(
-            EnhancedSourceMetadata::classify_source_type(
-                "https://blog.example.com",
-                "content"
-            ),
-            SourceType::Blog
-        ));
-        assert!(matches!(
-            EnhancedSourceMetadata::classify_source_type(
-                "https://stackoverflow.com/q/123",
-                "content"
-            ),
-            SourceType::Forum
-        ));
-        assert!(matches!(
-            EnhancedSourceMetadata::classify_source_type(
-                "https://example.com",
-                "This is a tutorial"
-            ),
-            SourceType::Tutorial
-        ));
-    }
-
-    #[test]
-    fn test_increment_usage() {
-        let basic = SourceMetadata {
-            url: "test".to_string(),
-            title: "test".to_string(),
-            snippet: "test".to_string(),
-            domain: "test".to_string(),
-            content_summary: "test".to_string(),
-            topics_covered: vec![],
-        };
-
-        let mut enhanced = EnhancedSourceMetadata::from_basic(&basic, "content");
-        let initial_score = enhanced.quality_score;
-
-        enhanced.increment_usage();
-        assert_eq!(enhanced.usage_count, 1);
-
-        // Increment 9 more times to trigger quality increase at 10
-        for _ in 0..9 {
-            enhanced.increment_usage();
-        }
-        assert_eq!(enhanced.usage_count, 10);
-        assert!(enhanced.quality_score >= initial_score);
-    }
-
-    // Test CachedQuery
-    #[test]
-    fn test_query_hash_generation() {
-        let query1 = "test query";
-        let query2 = "test query";
-        let query3 = "different query";
-
-        let hash1 = CachedQuery::query_hash(query1);
-        let hash2 = CachedQuery::query_hash(query2);
-        let hash3 = CachedQuery::query_hash(query3);
-
-        assert_eq!(hash1, hash2);
-        assert_ne!(hash1, hash3);
-    }
-
-    #[test]
-    fn test_query_hash_case_insensitive() {
-        let hash1 = CachedQuery::query_hash("Test Query");
-        let hash2 = CachedQuery::query_hash("test query");
-        assert_eq!(hash1, hash2);
-    }
-
-    #[test]
-    fn test_analyze_query_type() {
-        assert!(matches!(
-            CachedQuery::analyze_query_type("how to use rust"),
-            QueryType::Tutorial
-        ));
-        assert!(matches!(
-            CachedQuery::analyze_query_type("rust vs python"),
-            QueryType::Comparison
-        ));
-        assert!(matches!(
-            CachedQuery::analyze_query_type("rust reference documentation"),
-            QueryType::Reference
-        ));
-        assert!(matches!(
-            CachedQuery::analyze_query_type("fix rust error"),
-            QueryType::Troubleshooting
-        ));
-        assert!(matches!(
-            CachedQuery::analyze_query_type("rust best practices"),
-            QueryType::BestPractices
-        ));
-        assert!(matches!(
-            CachedQuery::analyze_query_type("implement rust feature"),
-            QueryType::Implementation
-        ));
-        assert!(matches!(
-            CachedQuery::analyze_query_type("rust ownership"),
-            QueryType::Concept
-        ));
-    }
-
-    #[test]
-    fn test_extract_semantic_topics() {
-        let query = "async rust web api performance";
-        let topics = CachedQuery::extract_semantic_topics(query);
-
-        assert!(topics.contains(&"async".to_string()));
-        assert!(topics.contains(&"rust".to_string()));
-        assert!(topics.contains(&"web".to_string()));
-        assert!(topics.contains(&"api".to_string()));
-        assert!(topics.contains(&"performance".to_string()));
-    }
-
-    #[test]
-    fn test_extract_semantic_topics_empty() {
-        let query = "something unrelated";
-        let topics = CachedQuery::extract_semantic_topics(query);
-        assert_eq!(topics.len(), 0);
-    }
-
-    #[test]
-    fn test_semantic_similarity_with_embeddings() {
-        let query1 = CachedQuery {
-            query: "test1".to_string(),
-            query_hash: "hash1".to_string(),
-            related_urls: vec![],
-            processed_at: Utc::now(),
-            embedding: Some(vec![1.0, 0.0, 0.0]),
-            query_type: QueryType::Concept,
-            semantic_topics: vec![],
-            user_context: None,
-        };
-
-        let query2 = CachedQuery {
-            query: "test2".to_string(),
-            query_hash: "hash2".to_string(),
-            related_urls: vec![],
-            processed_at: Utc::now(),
-            embedding: Some(vec![1.0, 0.0, 0.0]),
-            query_type: QueryType::Concept,
-            semantic_topics: vec![],
-            user_context: None,
-        };
-
-        let similarity = query1.semantic_similarity(&query2);
-        assert!((similarity - 1.0).abs() < 0.001);
-    }
-
-    #[test]
-    fn test_semantic_similarity_without_embeddings() {
-        let query1 = CachedQuery {
-            query: "test1".to_string(),
-            query_hash: "hash1".to_string(),
-            related_urls: vec![],
-            processed_at: Utc::now(),
-            embedding: None,
-            query_type: QueryType::Concept,
-            semantic_topics: vec!["rust".to_string(), "async".to_string()],
-            user_context: None,
-        };
-
-        let query2 = CachedQuery {
-            query: "test2".to_string(),
-            query_hash: "hash2".to_string(),
-            related_urls: vec![],
-            processed_at: Utc::now(),
-            embedding: None,
-            query_type: QueryType::Concept,
-            semantic_topics: vec!["rust".to_string(), "web".to_string()],
-            user_context: None,
-        };
-
-        let similarity = query1.semantic_similarity(&query2);
-        assert!(similarity > 0.0);
-        assert!(similarity < 1.0);
-    }
-
-    // Test CacheSettings
-    #[test]
-    fn test_cache_settings_default() {
-        let settings = CacheSettings::default();
-        assert_eq!(settings.max_document_age_days, 7);
-        assert_eq!(settings.min_query_similarity, 0.7);
-        assert_eq!(settings.max_cached_docs, 10);
-        assert!(settings.enable_semantic_search);
-        assert_eq!(settings.min_quality_score, 0.3);
-        assert!(!settings.enable_personalization);
-        assert_eq!(settings.max_concurrent_downloads, 8);
-    }
-
-    // Test PersistentEnhancedRAG
-    #[tokio::test]
-    async fn test_persistent_rag_in_memory_creation() {
-        let rag = PersistentEnhancedRAG::new_in_memory(
-            "http://localhost:8080".to_string(),
-            "test-model".to_string(),
-            "test-embed".to_string(),
-            Some("http://localhost:11434".to_string()),
-        );
-
-        assert!(rag.is_ok());
-        let rag = rag.unwrap();
-        assert!(rag.env.is_none());
-        assert!(rag.document_cache.is_none());
-        assert!(rag.query_cache.is_none());
-    }
-
-    #[tokio::test]
-    async fn test_persistent_rag_with_storage_creation() {
-        let temp_dir = tempdir().unwrap();
-        let db_path = temp_dir.path().join("test.db");
-
-        let rag = PersistentEnhancedRAG::new_with_persistent_storage(
-            &db_path,
-            "http://localhost:8080".to_string(),
-            "test-model".to_string(),
-            "test-embed".to_string(),
-            Some("http://localhost:11434".to_string()),
-            None,
-        );
-
-        assert!(rag.is_ok());
-        let rag = rag.unwrap();
-        assert!(rag.env.is_some());
-        assert!(rag.document_cache.is_some());
-        assert!(rag.query_cache.is_some());
-    }
-
-    #[tokio::test]
-    async fn test_cache_stats_in_memory() {
-        let rag = PersistentEnhancedRAG::new_in_memory(
-            "http://localhost:8080".to_string(),
-            "test-model".to_string(),
-            "test-embed".to_string(),
-            None,
-        )
-        .unwrap();
-
-        let stats = rag.cache_stats().await.unwrap();
-        assert_eq!(stats.total_documents, 0);
-        assert_eq!(stats.total_queries, 0);
-        assert_eq!(stats.fresh_documents, 0);
-        assert_eq!(stats.database_size_mb, 0.0);
-    }
-
-    #[tokio::test]
-    async fn test_cache_stats_with_storage() {
-        let temp_dir = tempdir().unwrap();
-        let db_path = temp_dir.path().join("test.db");
-
-        let rag = PersistentEnhancedRAG::new_with_persistent_storage(
-            &db_path,
-            "http://localhost:8080".to_string(),
-            "test-model".to_string(),
-            "test-embed".to_string(),
-            None,
-            None,
-        )
-        .unwrap();
-
-        let stats = rag.cache_stats().await.unwrap();
-        assert_eq!(stats.total_documents, 0);
-        assert_eq!(stats.total_queries, 0);
-    }
-
-    #[tokio::test]
-    async fn test_cleanup_cache_in_memory() {
-        let mut rag = PersistentEnhancedRAG::new_in_memory(
-            "http://localhost:8080".to_string(),
-            "test-model".to_string(),
-            "test-embed".to_string(),
-            None,
-        )
-        .unwrap();
-
-        let stats = rag.cleanup_cache().await.unwrap();
-        assert_eq!(stats.deleted_documents, 0);
-        assert_eq!(stats.deleted_queries, 0);
-    }
-
-    #[tokio::test]
-    async fn test_get_quality_stats_in_memory() {
-        let rag = PersistentEnhancedRAG::new_in_memory(
-            "http://localhost:8080".to_string(),
-            "test-model".to_string(),
-            "test-embed".to_string(),
-            None,
-        )
-        .unwrap();
-
-        let stats = rag.get_quality_stats().await.unwrap();
-        assert_eq!(stats.total_sources, 0);
-        assert_eq!(stats.average_quality_score, 0.0);
-    }
-
-    // Test Stats structures
-    #[test]
-    fn test_cleanup_stats_default() {
-        let stats = CleanupStats::default();
-        assert_eq!(stats.deleted_documents, 0);
-        assert_eq!(stats.deleted_queries, 0);
-    }
-
-    #[test]
-    fn test_quality_stats_default() {
-        let stats = QualityStats::default();
-        assert_eq!(stats.total_sources, 0);
-        assert_eq!(stats.very_high_quality, 0);
-        assert_eq!(stats.high_quality, 0);
-        assert_eq!(stats.medium_quality, 0);
-        assert_eq!(stats.low_quality, 0);
-        assert_eq!(stats.very_low_quality, 0);
-        assert_eq!(stats.average_quality_score, 0.0);
-    }
-
-    // Test ReliabilityRating comparisons
-    #[test]
-    fn test_reliability_rating_ordering() {
-        assert!(ReliabilityRating::VeryHigh > ReliabilityRating::High);
-        assert!(ReliabilityRating::High > ReliabilityRating::Medium);
-        assert!(ReliabilityRating::Medium > ReliabilityRating::Low);
-        assert!(ReliabilityRating::Low > ReliabilityRating::VeryLow);
-    }
-
-    // Test ExpertiseLevel
-    #[test]
-    fn test_expertise_level_serialization() {
-        let level = ExpertiseLevel::Advanced;
-        let serialized = serde_json::to_string(&level).unwrap();
-        let deserialized: ExpertiseLevel = serde_json::from_str(&serialized).unwrap();
-        assert!(matches!(deserialized, ExpertiseLevel::Advanced));
-    }
-
-    // Test SourceType
-    #[test]
-    fn test_source_type_serialization() {
-        let source_type = SourceType::Academic;
-        let serialized = serde_json::to_string(&source_type).unwrap();
-        let deserialized: SourceType = serde_json::from_str(&serialized).unwrap();
-        assert!(matches!(deserialized, SourceType::Academic));
-    }
 }

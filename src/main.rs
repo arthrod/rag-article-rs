@@ -1,34 +1,41 @@
-use enhanced_rag_article_generator::cli::run_cli;
 use anyhow::Result;
+use enhanced_rag_article_generator::cli::run_cli;
 use tracing_subscriber;
 
-// Константы приложения
+// Application constants
 const APP_NAME: &str = "Enhanced RAG Article Generator";
 const VERSION: &str = "1.0.0";
 
+/// Main entry point for the application.
+///
+/// Initializes logging, runtime environment, and hands off control
+/// to the CLI module. Handles top-level errors gracefully.
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Инициализация системы логирования
+    // Initialize logging system
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
-    // Запуск CLI интерфейса с обработкой ошибок
+    // Run CLI interface with error handling
     match run_cli().await {
         Ok(_) => {
-            println!("Приложение {} v{} завершено успешно", APP_NAME, VERSION);
+            println!(
+                "Application {} v{} finished successfully",
+                APP_NAME, VERSION
+            );
             Ok(())
         }
         Err(e) => {
-            eprintln!("Критическая ошибка приложения: {}", e);
-            
-            // Вывод цепочки причин ошибки для отладки
+            eprintln!("Critical application error: {}", e);
+
+            // Print error cause chain for debugging
             let mut source = e.source();
             while let Some(err) = source {
-                eprintln!("  Причина: {}", err);
+                eprintln!("  Cause: {}", err);
                 source = err.source();
             }
-            
+
             std::process::exit(1);
         }
     }
