@@ -803,3 +803,433 @@ impl EnhancedRAGArticleGenerator {
         &self.sources_metadata
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Test SourceMetadata
+    #[test]
+    fn test_source_metadata_creation() {
+        let metadata = SourceMetadata {
+            url: "https://example.com".to_string(),
+            title: "Test Article".to_string(),
+            snippet: "A test snippet".to_string(),
+            domain: "example.com".to_string(),
+            content_summary: "Summary of content".to_string(),
+            topics_covered: vec!["topic1".to_string(), "topic2".to_string()],
+        };
+
+        assert_eq!(metadata.url, "https://example.com");
+        assert_eq!(metadata.title, "Test Article");
+        assert_eq!(metadata.topics_covered.len(), 2);
+    }
+
+    // Test Document structure
+    #[test]
+    fn test_document_creation() {
+        let mut metadata = HashMap::new();
+        metadata.insert("source_url".to_string(), "https://test.com".to_string());
+
+        let doc = Document {
+            page_content: "Test content".to_string(),
+            metadata,
+        };
+
+        assert_eq!(doc.page_content, "Test content");
+        assert_eq!(
+            doc.metadata.get("source_url").unwrap(),
+            "https://test.com"
+        );
+    }
+
+    // Test SearchResultItem deserialization
+    #[test]
+    fn test_search_result_item_deserialization() {
+        let json = r#"{
+            "url": "https://example.com",
+            "title": "Example Title",
+            "content": "Example content"
+        }"#;
+
+        let item: SearchResultItem = serde_json::from_str(json).unwrap();
+        assert_eq!(item.url, "https://example.com");
+        assert_eq!(item.title, "Example Title");
+        assert_eq!(item.content, Some("Example content".to_string()));
+    }
+
+    #[test]
+    fn test_search_result_item_without_content() {
+        let json = r#"{
+            "url": "https://example.com",
+            "title": "Example Title"
+        }"#;
+
+        let item: SearchResultItem = serde_json::from_str(json).unwrap();
+        assert!(item.content.is_none());
+    }
+
+    // Test cosine similarity
+    #[test]
+    fn test_cosine_similarity_identical_vectors() {
+        let vec_a = vec![1.0, 2.0, 3.0];
+        let vec_b = vec![1.0, 2.0, 3.0];
+        let similarity = cosine_similarity(&vec_a, &vec_b);
+        assert!((similarity - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_cosine_similarity_orthogonal_vectors() {
+        let vec_a = vec![1.0, 0.0];
+        let vec_b = vec![0.0, 1.0];
+        let similarity = cosine_similarity(&vec_a, &vec_b);
+        assert!((similarity - 0.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_cosine_similarity_opposite_vectors() {
+        let vec_a = vec![1.0, 2.0];
+        let vec_b = vec![-1.0, -2.0];
+        let similarity = cosine_similarity(&vec_a, &vec_b);
+        assert!(similarity < 0.0);
+    }
+
+    #[test]
+    fn test_cosine_similarity_zero_vectors() {
+        let vec_a = vec![0.0, 0.0, 0.0];
+        let vec_b = vec![1.0, 2.0, 3.0];
+        let similarity = cosine_similarity(&vec_a, &vec_b);
+        assert_eq!(similarity, 0.0);
+    }
+
+    #[test]
+    fn test_cosine_similarity_arrays() {
+        let arr_a = Array1::from(vec![1.0, 2.0, 3.0]);
+        let arr_b = Array1::from(vec![1.0, 2.0, 3.0]);
+        let similarity = cosine_similarity_arrays(&arr_a, &arr_b);
+        assert!((similarity - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_cosine_similarity_arrays_zero_norm() {
+        let arr_a = Array1::from(vec![0.0, 0.0]);
+        let arr_b = Array1::from(vec![1.0, 1.0]);
+        let similarity = cosine_similarity_arrays(&arr_a, &arr_b);
+        assert_eq!(similarity, 0.0);
+    }
+
+    // Test SearxSearchWrapper
+    #[test]
+    fn test_searx_search_wrapper_creation() {
+        let wrapper = SearxSearchWrapper::new("http://localhost:8080".to_string());
+        assert_eq!(wrapper.host, "http://localhost:8080");
+    }
+
+    // Test RecursiveUrlLoader
+    #[test]
+    fn test_recursive_url_loader_creation() {
+        let loader = RecursiveUrlLoader::new(2, 30);
+        // Just verify it constructs without panic
+        assert!(std::mem::size_of_val(&loader) > 0);
+    }
+
+    #[test]
+    fn test_html_to_markdown_conversion() {
+        let loader = RecursiveUrlLoader::new(2, 30);
+        let html = r#"<html><body><h1>Test Header</h1><p>This is a paragraph with some content.</p></body></html>"#;
+        let markdown = loader.convert_html_to_markdown(html);
+
+        assert!(markdown.contains("Test Header"));
+        assert!(markdown.len() > 0);
+    }
+
+    #[test]
+    fn test_html_to_markdown_cleans_navigation() {
+        let loader = RecursiveUrlLoader::new(2, 30);
+        let html = r#"<html><body><nav>Skip to content</nav><p>Real content here</p></body></html>"#;
+        let markdown = loader.convert_html_to_markdown(html);
+
+        // Navigation elements should be removed or minimized
+        assert!(markdown.contains("Real content"));
+    }
+
+    // Test OllamaEmbeddings
+    #[test]
+    fn test_ollama_embeddings_creation() {
+        let embeddings = OllamaEmbeddings::new(
+            "test-model".to_string(),
+            Some("http://localhost:11434".to_string()),
+        );
+        assert_eq!(embeddings.model_name, "test-model");
+        assert_eq!(embeddings.ollama_host, "http://localhost:11434");
+    }
+
+    #[test]
+    fn test_ollama_embeddings_default_host() {
+        let embeddings = OllamaEmbeddings::new("test-model".to_string(), None);
+        assert_eq!(embeddings.ollama_host, "http://localhost:11434");
+    }
+
+    // Test OllamaLLM
+    #[test]
+    fn test_ollama_llm_creation() {
+        let llm = OllamaLLM::new(
+            "test-model".to_string(),
+            Some("http://localhost:11434".to_string()),
+        );
+        assert_eq!(llm.model_name, "test-model");
+        assert_eq!(llm.ollama_host, "http://localhost:11434");
+    }
+
+    #[test]
+    fn test_ollama_llm_default_host() {
+        let llm = OllamaLLM::new("test-model".to_string(), None);
+        assert_eq!(llm.ollama_host, "http://localhost:11434");
+    }
+
+    // Test SimpleVectorStore
+    #[tokio::test]
+    async fn test_simple_vector_store_creation() {
+        let embedding_model =
+            Box::new(OllamaEmbeddings::new("test-model".to_string(), None))
+                as Box<dyn EmbeddingModel + Send + Sync>;
+        let store = SimpleVectorStore::new(embedding_model);
+
+        assert_eq!(store.documents().len(), 0);
+        assert_eq!(store.embeddings().nrows(), 0);
+        assert_eq!(store.embedding_dim, 0);
+    }
+
+    // Test EnhancedRAGArticleGenerator
+    #[test]
+    fn test_enhanced_rag_generator_creation() {
+        let generator = EnhancedRAGArticleGenerator::new(
+            "http://localhost:8080".to_string(),
+            "test-model".to_string(),
+            "test-embed".to_string(),
+            Some("http://localhost:11434".to_string()),
+        );
+
+        assert_eq!(generator.source_counter, 1);
+        assert_eq!(generator.sources_metadata().len(), 0);
+    }
+
+    #[test]
+    fn test_extract_content_summary() {
+        let generator = EnhancedRAGArticleGenerator::new(
+            "http://localhost:8080".to_string(),
+            "test-model".to_string(),
+            "test-embed".to_string(),
+            None,
+        );
+
+        let content = "# Topic 1\nSome content\n## Topic 2\nMore content";
+        let (summary, topics) = generator.extract_content_summary(content);
+
+        assert!(summary.len() > 0);
+        assert!(topics.len() > 0);
+        assert!(topics.contains(&"Topic 1".to_string()) || topics.contains(&"Topic 2".to_string()));
+    }
+
+    #[test]
+    fn test_extract_content_summary_long_content() {
+        let generator = EnhancedRAGArticleGenerator::new(
+            "http://localhost:8080".to_string(),
+            "test-model".to_string(),
+            "test-embed".to_string(),
+            None,
+        );
+
+        let long_content = "a".repeat(500);
+        let (summary, _topics) = generator.extract_content_summary(&long_content);
+
+        assert!(summary.len() <= 303); // 300 + "..."
+        assert!(summary.ends_with("..."));
+    }
+
+    #[test]
+    fn test_simple_text_ranking() {
+        let generator = EnhancedRAGArticleGenerator::new(
+            "http://localhost:8080".to_string(),
+            "test-model".to_string(),
+            "test-embed".to_string(),
+            None,
+        );
+
+        let mut metadata1 = HashMap::new();
+        metadata1.insert("source_title".to_string(), "Rust Programming".to_string());
+
+        let mut metadata2 = HashMap::new();
+        metadata2.insert("source_title".to_string(), "Python Guide".to_string());
+
+        let mut metadata3 = HashMap::new();
+        metadata3.insert("source_title".to_string(), "Rust Advanced Topics".to_string());
+
+        let docs = vec![
+            Document {
+                page_content: "This is about Python programming".to_string(),
+                metadata: metadata1,
+            },
+            Document {
+                page_content: "This is about Rust programming and Rust features".to_string(),
+                metadata: metadata2,
+            },
+            Document {
+                page_content: "Advanced Rust topics and Rust patterns".to_string(),
+                metadata: metadata3,
+            },
+        ];
+
+        let ranked = generator.simple_text_ranking(&docs, "Rust programming", 2);
+
+        assert_eq!(ranked.len(), 2);
+        // The documents with "Rust" should rank higher
+        assert!(ranked[0].page_content.contains("Rust"));
+    }
+
+    #[test]
+    fn test_simple_text_ranking_empty_query() {
+        let generator = EnhancedRAGArticleGenerator::new(
+            "http://localhost:8080".to_string(),
+            "test-model".to_string(),
+            "test-embed".to_string(),
+            None,
+        );
+
+        let docs = vec![Document {
+            page_content: "Test content".to_string(),
+            metadata: HashMap::new(),
+        }];
+
+        let ranked = generator.simple_text_ranking(&docs, "", 10);
+        assert_eq!(ranked.len(), 1);
+    }
+
+    #[test]
+    fn test_simple_text_ranking_no_documents() {
+        let generator = EnhancedRAGArticleGenerator::new(
+            "http://localhost:8080".to_string(),
+            "test-model".to_string(),
+            "test-embed".to_string(),
+            None,
+        );
+
+        let ranked = generator.simple_text_ranking(&[], "test query", 10);
+        assert_eq!(ranked.len(), 0);
+    }
+
+    #[test]
+    fn test_prepare_context_with_sources() {
+        let generator = EnhancedRAGArticleGenerator::new(
+            "http://localhost:8080".to_string(),
+            "test-model".to_string(),
+            "test-embed".to_string(),
+            None,
+        );
+
+        let mut metadata = HashMap::new();
+        metadata.insert("source_number".to_string(), "1".to_string());
+        metadata.insert("source_title".to_string(), "Test Article".to_string());
+        metadata.insert("source_domain".to_string(), "example.com".to_string());
+
+        let docs = vec![Document {
+            page_content: "Test content".to_string(),
+            metadata,
+        }];
+
+        let context = generator.prepare_context_with_sources(&docs);
+
+        assert!(context.contains("SOURCE 1"));
+        assert!(context.contains("Test Article"));
+        assert!(context.contains("example.com"));
+        assert!(context.contains("Test content"));
+    }
+
+    #[test]
+    fn test_prepare_context_empty_documents() {
+        let generator = EnhancedRAGArticleGenerator::new(
+            "http://localhost:8080".to_string(),
+            "test-model".to_string(),
+            "test-embed".to_string(),
+            None,
+        );
+
+        let context = generator.prepare_context_with_sources(&[]);
+        assert_eq!(context, "");
+    }
+
+    #[test]
+    fn test_add_enhanced_sources_list() {
+        let mut generator = EnhancedRAGArticleGenerator::new(
+            "http://localhost:8080".to_string(),
+            "test-model".to_string(),
+            "test-embed".to_string(),
+            None,
+        );
+
+        // Add some source metadata
+        generator.sources_metadata.insert(
+            1,
+            SourceMetadata {
+                url: "https://example.com".to_string(),
+                title: "Test Source".to_string(),
+                snippet: "snippet".to_string(),
+                domain: "example.com".to_string(),
+                content_summary: "A test summary".to_string(),
+                topics_covered: vec!["topic1".to_string(), "topic2".to_string()],
+            },
+        );
+
+        let article = "# My Article\nContent here";
+        let with_sources = generator.add_enhanced_sources_list(article);
+
+        assert!(with_sources.contains("# My Article"));
+        assert!(with_sources.contains("## Sources"));
+        assert!(with_sources.contains("Test Source"));
+        assert!(with_sources.contains("https://example.com"));
+        assert!(with_sources.contains("example.com"));
+        assert!(with_sources.contains("topic1, topic2"));
+    }
+
+    #[test]
+    fn test_add_enhanced_sources_list_no_sources() {
+        let generator = EnhancedRAGArticleGenerator::new(
+            "http://localhost:8080".to_string(),
+            "test-model".to_string(),
+            "test-embed".to_string(),
+            None,
+        );
+
+        let article = "# My Article\nContent here";
+        let with_sources = generator.add_enhanced_sources_list(article);
+
+        assert!(with_sources.contains("# My Article"));
+        assert!(with_sources.contains("## Sources"));
+    }
+
+    #[test]
+    fn test_sources_metadata_getter() {
+        let mut generator = EnhancedRAGArticleGenerator::new(
+            "http://localhost:8080".to_string(),
+            "test-model".to_string(),
+            "test-embed".to_string(),
+            None,
+        );
+
+        assert_eq!(generator.sources_metadata().len(), 0);
+
+        generator.sources_metadata.insert(
+            1,
+            SourceMetadata {
+                url: "test".to_string(),
+                title: "test".to_string(),
+                snippet: "test".to_string(),
+                domain: "test".to_string(),
+                content_summary: "test".to_string(),
+                topics_covered: vec![],
+            },
+        );
+
+        assert_eq!(generator.sources_metadata().len(), 1);
+    }
+}

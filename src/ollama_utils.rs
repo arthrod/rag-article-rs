@@ -323,4 +323,153 @@ mod tests {
         let response: OllamaResponse = serde_json::from_str(json).unwrap();
         assert_eq!(response.get_content().unwrap(), "Hello");
     }
+
+    #[test]
+    fn test_ollama_response_is_done() {
+        let json = r#"{"model":"test","response":"content","done":true}"#;
+        let response: OllamaResponse = serde_json::from_str(json).unwrap();
+        assert!(response.is_done());
+
+        let json2 = r#"{"model":"test","response":"content","done":false}"#;
+        let response2: OllamaResponse = serde_json::from_str(json2).unwrap();
+        assert!(!response2.is_done());
+    }
+
+    #[test]
+    fn test_ollama_response_with_performance_info() {
+        let json = r#"{
+            "model":"test",
+            "response":"content",
+            "done":true,
+            "total_duration":1000000000,
+            "eval_count":10
+        }"#;
+        let response: OllamaResponse = serde_json::from_str(json).unwrap();
+        let perf_info = response.get_performance_info();
+        assert!(perf_info.is_some());
+        assert!(perf_info.unwrap().contains("tokens/s"));
+    }
+
+    #[test]
+    fn test_ollama_response_without_performance_info() {
+        let json = r#"{"model":"test","response":"content","done":true}"#;
+        let response: OllamaResponse = serde_json::from_str(json).unwrap();
+        assert!(response.get_performance_info().is_none());
+    }
+
+    #[test]
+    fn test_get_content_error_priority() {
+        // Error should take priority over response field
+        let json = r#"{"model":"test","response":"content","error":"something failed"}"#;
+        let response: OllamaResponse = serde_json::from_str(json).unwrap();
+        assert!(response.get_content().is_err());
+        assert_eq!(response.get_content().unwrap_err(), "something failed");
+    }
+
+    #[test]
+    fn test_get_content_no_content() {
+        let json = r#"{"model":"test","done":true}"#;
+        let response: OllamaResponse = serde_json::from_str(json).unwrap();
+        assert!(response.get_content().is_err());
+        assert!(response
+            .get_content()
+            .unwrap_err()
+            .contains("No content found"));
+    }
+
+    #[test]
+    fn test_parse_ollama_response_success() {
+        let response_text = r#"{"model":"test","response":"Generated text","done":true}"#;
+        let result = parse_ollama_response(response_text);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "Generated text");
+    }
+
+    #[test]
+    fn test_parse_ollama_response_error() {
+        let response_text = r#"{"error":"model not found"}"#;
+        let result = parse_ollama_response(response_text);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not found"));
+    }
+
+    #[test]
+    fn test_parse_ollama_response_invalid_json() {
+        let response_text = "invalid json{";
+        let result = parse_ollama_response(response_text);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("parse"));
+    }
+
+    #[test]
+    fn test_parse_ollama_response_with_performance() {
+        let response_text = r#"{
+            "model":"test",
+            "response":"content",
+            "done":true,
+            "total_duration":2000000000,
+            "eval_count":20
+        }"#;
+        let result = parse_ollama_response(response_text);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_model_info_deserialization() {
+        let json = r#"{
+            "name":"llama2:7b",
+            "modified_at":"2024-01-01T00:00:00Z",
+            "size":3825819519
+        }"#;
+        let model_info: ModelInfo = serde_json::from_str(json).unwrap();
+        assert_eq!(model_info.name, "llama2:7b");
+        assert_eq!(model_info.size, 3825819519);
+    }
+
+    #[test]
+    fn test_ollama_tags_response_deserialization() {
+        let json = r#"{
+            "models": [
+                {"name":"model1","modified_at":"2024-01-01T00:00:00Z","size":1000},
+                {"name":"model2","modified_at":"2024-01-01T00:00:00Z","size":2000}
+            ]
+        }"#;
+        let tags: OllamaTagsResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(tags.models.len(), 2);
+        assert_eq!(tags.models[0].name, "model1");
+        assert_eq!(tags.models[1].name, "model2");
+    }
+
+    #[test]
+    fn test_chat_message_deserialization() {
+        let json = r#"{"role":"assistant","content":"Hello there"}"#;
+        let message: ChatMessage = serde_json::from_str(json).unwrap();
+        assert_eq!(message.role, "assistant");
+        assert_eq!(message.content, "Hello there");
+    }
+
+    #[test]
+    fn test_ollama_response_chat_format() {
+        let json = r#"{
+            "model":"test",
+            "message":{"role":"assistant","content":"Chat response"},
+            "done":true
+        }"#;
+        let response: OllamaResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.get_content().unwrap(), "Chat response");
+        assert!(response.message.is_some());
+        assert_eq!(response.message.as_ref().unwrap().role, "assistant");
+    }
+
+    #[test]
+    fn test_ollama_response_generate_format() {
+        let json = r#"{
+            "model":"test",
+            "response":"Generate response",
+            "done":true
+        }"#;
+        let response: OllamaResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.get_content().unwrap(), "Generate response");
+        assert!(response.response.is_some());
+    }
 }
