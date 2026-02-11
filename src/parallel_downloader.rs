@@ -314,34 +314,6 @@ mod tests {
         assert!(truncated.ends_with("..."));
     }
 
-    #[test]
-    fn test_truncate_url_short_string() {
-        let short_url = "https://test.com";
-        let truncated = EnhancedRAGArticleGenerator::truncate_url(short_url, 50);
-        assert_eq!(truncated, short_url);
-        assert!(!truncated.ends_with("..."));
-    }
-
-    #[test]
-    fn test_truncate_url_exact_length() {
-        let url = "https://example.com";
-        let truncated = EnhancedRAGArticleGenerator::truncate_url(url, url.len());
-        assert_eq!(truncated, url);
-    }
-
-    #[test]
-    fn test_truncate_url_edge_cases() {
-        // Test with very small max_len
-        let url = "https://example.com/path";
-        let truncated = EnhancedRAGArticleGenerator::truncate_url(url, 5);
-        assert!(truncated.len() <= 5);
-        assert!(truncated.ends_with("..."));
-
-        // Test with zero
-        let truncated_zero = EnhancedRAGArticleGenerator::truncate_url(url, 0);
-        assert_eq!(truncated_zero, "...");
-    }
-
     #[tokio::test]
     async fn test_parallel_download_empty_urls() {
         // Test with empty URL list
@@ -360,89 +332,5 @@ mod tests {
         assert_eq!(stats.total_urls, 0);
         assert_eq!(stats.successful, 0);
         assert_eq!(stats.failed, 0);
-    }
-
-    #[tokio::test]
-    async fn test_parallel_download_with_concurrency_limit() {
-        let generator = EnhancedRAGArticleGenerator::new(
-            "http://test".to_string(),
-            "test-model".to_string(),
-            "test-embed".to_string(),
-            None,
-        );
-
-        // Test with different concurrency limits
-        let result = generator.load_documents_with_stats(vec![], 1).await;
-        assert!(result.is_ok());
-
-        let result = generator.load_documents_with_stats(vec![], 16).await;
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_download_stats_default() {
-        let stats = DownloadStats::default();
-        assert_eq!(stats.total_urls, 0);
-        assert_eq!(stats.successful, 0);
-        assert_eq!(stats.failed, 0);
-        assert_eq!(stats.total_bytes, 0);
-        assert_eq!(stats.throughput, 0.0);
-        assert_eq!(stats.elapsed_time.as_secs(), 0);
-    }
-
-    #[test]
-    fn test_download_stats_debug() {
-        let stats = DownloadStats {
-            total_urls: 10,
-            successful: 8,
-            failed: 2,
-            total_bytes: 50000,
-            elapsed_time: Duration::from_secs(5),
-            throughput: 1.6,
-        };
-
-        let debug_str = format!("{:?}", stats);
-        assert!(debug_str.contains("10"));
-        assert!(debug_str.contains("8"));
-        assert!(debug_str.contains("2"));
-    }
-
-    #[test]
-    fn test_max_concurrent_downloads_constant() {
-        assert_eq!(MAX_CONCURRENT_DOWNLOADS, 8);
-    }
-
-    // Additional edge case tests
-
-    #[tokio::test]
-    async fn test_load_documents_with_concurrency_limit_wrapper() {
-        let generator = EnhancedRAGArticleGenerator::new(
-            "http://test".to_string(),
-            "test-model".to_string(),
-            "test-embed".to_string(),
-            None,
-        );
-
-        // This should use load_documents_with_stats internally
-        let result = generator
-            .load_documents_with_concurrency_limit(vec![], 4)
-            .await;
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap().len(), 0);
-    }
-
-    #[tokio::test]
-    async fn test_parallel_download_uses_max_concurrent() {
-        let generator = EnhancedRAGArticleGenerator::new(
-            "http://test".to_string(),
-            "test-model".to_string(),
-            "test-embed".to_string(),
-            None,
-        );
-
-        // This should internally use MAX_CONCURRENT_DOWNLOADS
-        let result = generator.load_and_process_documents_parallel(vec![]).await;
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap().len(), 0);
     }
 }

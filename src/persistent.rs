@@ -8,10 +8,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use tracing::info;
 
-use crate::{
-    cosine_similarity, Document, EmbeddingModel, EnhancedRAGArticleGenerator, OllamaEmbeddings,
-    SourceMetadata,
-};
+use crate::{Document, EnhancedRAGArticleGenerator, SourceMetadata, cosine_similarity, EmbeddingModel, OllamaEmbeddings};
 
 /// Extended source metadata with analytics
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -136,17 +133,12 @@ impl CachedDocument {
         let header_count = content.matches('#').count() as f32;
         let list_count = content.matches("- ").count() as f32;
         let code_count = content.matches("```").count() as f32;
-        let structure_score = (header_count + list_count + code_count * 2.0)
-            / (content_length as f32 / 1000.0).max(1.0);
+        let structure_score = (header_count + list_count + code_count * 2.0) / (content_length as f32 / 1000.0).max(1.0);
 
         // Readability score (simple metric)
         let sentences = content.split('.').count() as f32;
         let words = content.split_whitespace().count() as f32;
-        let avg_sentence_length = if sentences > 0.0 {
-            words / sentences
-        } else {
-            0.0
-        };
+        let avg_sentence_length = if sentences > 0.0 { words / sentences } else { 0.0 };
         let readability_score = (20.0 - avg_sentence_length.min(20.0)) / 20.0;
 
         // Technical depth (keywords, code examples)
@@ -166,10 +158,7 @@ impl CachedDocument {
 
     /// Detects content language (simplified version)
     pub fn detect_language(content: &str) -> String {
-        let russian_chars = content
-            .chars()
-            .filter(|c| "абвгдеёжзийклмнопрстуфхцчшщъыьэюя".contains(*c))
-            .count();
+        let russian_chars = content.chars().filter(|c| "абвгдеёжзийклмнопрстуфхцчшщъыьэюя".contains(*c)).count();
         let total_chars = content.chars().filter(|c| c.is_alphabetic()).count();
 
         if total_chars > 0 && (russian_chars as f32 / total_chars as f32) > 0.1 {
@@ -312,17 +301,11 @@ impl CachedQuery {
 
         if query_lower.contains("tutorial") || query_lower.contains("how to") {
             QueryType::Tutorial
-        } else if query_lower.contains("vs")
-            || query_lower.contains("compare")
-            || query_lower.contains("difference")
-        {
+        } else if query_lower.contains("vs") || query_lower.contains("compare") || query_lower.contains("difference") {
             QueryType::Comparison
         } else if query_lower.contains("reference") || query_lower.contains("documentation") {
             QueryType::Reference
-        } else if query_lower.contains("error")
-            || query_lower.contains("fix")
-            || query_lower.contains("troubleshoot")
-        {
+        } else if query_lower.contains("error") || query_lower.contains("fix") || query_lower.contains("troubleshoot") {
             QueryType::Troubleshooting
         } else if query_lower.contains("best practices") || query_lower.contains("guidelines") {
             QueryType::BestPractices
@@ -651,9 +634,7 @@ impl PersistentEnhancedRAG {
                     semantic_topics: CachedQuery::extract_semantic_topics(query),
                     user_context: None,
                 });
-                sim_b
-                    .partial_cmp(&sim_a)
-                    .unwrap_or(std::cmp::Ordering::Equal)
+                sim_b.partial_cmp(&sim_a).unwrap_or(std::cmp::Ordering::Equal)
             });
 
             similar_queries.truncate(5);
@@ -666,8 +647,8 @@ impl PersistentEnhancedRAG {
 
     /// Checks if document meets quality threshold
     fn meets_quality_threshold(&self, doc: &CachedDocument) -> bool {
-        doc.quality_metrics.structure_score >= self.cache_settings.min_quality_score
-            || doc.quality_metrics.technical_depth >= self.cache_settings.min_quality_score
+        doc.quality_metrics.structure_score >= self.cache_settings.min_quality_score ||
+        doc.quality_metrics.technical_depth >= self.cache_settings.min_quality_score
     }
 
     /// Filters URLs by quality sources
@@ -872,11 +853,7 @@ impl PersistentEnhancedRAG {
 
         // Sort and return top documents
         scored_docs.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        Ok(scored_docs
-            .into_iter()
-            .take(max_docs)
-            .map(|(doc, _)| doc)
-            .collect())
+        Ok(scored_docs.into_iter().take(max_docs).map(|(doc, _)| doc).collect())
     }
 
     /// Enhanced text ranking considering quality
@@ -888,9 +865,7 @@ impl PersistentEnhancedRAG {
             .iter()
             .map(|doc| {
                 let content_lower = doc.page_content.to_lowercase();
-                let title_lower = doc
-                    .metadata
-                    .get("source_title")
+                let title_lower = doc.metadata.get("source_title")
                     .unwrap_or(&String::new())
                     .to_lowercase();
 
@@ -921,11 +896,7 @@ impl PersistentEnhancedRAG {
             .collect();
 
         scored_docs.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        scored_docs
-            .into_iter()
-            .take(max_docs)
-            .map(|(doc, _)| doc)
-            .collect()
+        scored_docs.into_iter().take(max_docs).map(|(doc, _)| doc).collect()
     }
 
     /// Creates enhanced prompt considering AI analytics
@@ -1215,10 +1186,7 @@ impl PersistentEnhancedRAG {
         };
 
         for url in documents_to_delete {
-            self.document_cache
-                .as_ref()
-                .unwrap()
-                .delete(&mut wtxn, &url)?;
+            self.document_cache.as_ref().unwrap().delete(&mut wtxn, &url)?;
             deleted_docs += 1;
         }
 
@@ -1236,10 +1204,7 @@ impl PersistentEnhancedRAG {
         };
 
         for hash in queries_to_delete {
-            self.query_cache
-                .as_ref()
-                .unwrap()
-                .delete(&mut wtxn, &hash)?;
+            self.query_cache.as_ref().unwrap().delete(&mut wtxn, &hash)?;
             deleted_queries += 1;
         }
 
